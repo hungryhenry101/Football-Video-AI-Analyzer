@@ -2,10 +2,11 @@
 
 目前该项目为研究/学习级产品，用于跟踪足球比赛中的人和球，并识别出守门员、计算威胁程度，用于最终自动生成守门员处理球集锦（未实现）。
 
-<video src="./output/demo.mp4" autoplay loop muted width="800"></video>
-<p align="center">输出视频示例</p>
+[![Demo Video](docs/demo.png)](docs/demo.mp4)
+<p align="center">视频输出效果</p>
 
-![track_trajectories](output/detailed.png)
+
+![track_trajectories](docs/detailed.png)
 <p align="center">相机运动补偿后效果平面展示</p>
 
 ## 已实现功能
@@ -31,7 +32,7 @@ pip install -r requirements.txt
 
 ---
 
-## 使用教程
+## 如何启动？
 
 > 模型文件 ~~曾使用 YOLOv11m~~ [football-players-detection](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbcYOLOv11m)，自行训练或在 [蓝奏云](https://wwbcc.lanzoup.com/iDH023f1y7zg) 下载模型
 > 测试比赛视频已内置于 `input_vids/` 中
@@ -47,6 +48,13 @@ pip install -r requirements.txt
 ---
 
 ## TODO
+
+打算换一种方法进行相机标定 (calibration)，不使用光流法。因为其
+1. 不是非常准确
+2. 没有位置语义
+3. 还可能选择到 hud。
+目前正在进行决策：轻量地换为球场位置检测模型；或完整的 SoccerNet 相机标定。
+
 制作守门员处理球集锦（包括关键动作剪辑、威胁评分与可视化）
 - [ ] 自动生成守门员处理球集锦
 - [ ] 威胁度评分（结合位置、球速、对方球员密度等特征）

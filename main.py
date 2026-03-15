@@ -10,17 +10,19 @@ from collections import defaultdict, deque
 import core.ball_tracker as ball_tracker
 import core.cmc as cmc
 
-MODEL_PATH = "./models/best.pt"  # YOUR MODEL PATH HERE
+FOOTBALL_MODEL_PATH = "models/football_best.pt"  # YOUR MODEL PATH HERE
+OVERLAY_MODEL_PATH = "models/overlay.pt"
 VIDEO_PATH = "./input_vids/test1.mp4" # YOUR VIDEO PATH HERE
 OUTPUT_VIDEO = "./output/out.mp4"
 CONF_THRES = 0.15  # 降低阈值以提高检测率
 
-player_model = YOLO(MODEL_PATH)
-ball_model = YOLO(MODEL_PATH)
+player_model = YOLO(FOOTBALL_MODEL_PATH)
+ball_model = YOLO(FOOTBALL_MODEL_PATH)
 names = player_model.names    
 name2id = {v: k for k, v in player_model.names.items()}
 ball_cls = name2id["ball"]
 
+# CSV WRITER
 csv_file = open("./output/track_log.csv", "w", newline="")
 csv_writer = csv.writer(csv_file)
 csv_writer.writerow(["frame","id","raw_x","raw_y","comp_x","comp_y","dx","dy","dist"])
@@ -31,18 +33,8 @@ fps = cap.get(cv2.CAP_PROP_FPS)
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
 fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 writer = cv2.VideoWriter(OUTPUT_VIDEO, fourcc, fps, (width, height))
-
-# Ball Tracker
-football_tracker = ball_tracker.BallTracker()
-
-track_colors = {}
-
-# raw and compensated trajectories (players)
-raw_traj = defaultdict(lambda: deque(maxlen=50))
-comp_traj = defaultdict(lambda: deque(maxlen=50))
 
 def has_display():
     if sys.platform == 'darwin' or sys.platform == 'win32':
@@ -51,6 +43,14 @@ def has_display():
 
 # CMC
 compensator = cmc.CMC(width, height, has_display())
+# Ball Tracker
+football_tracker = ball_tracker.BallTracker()
+
+track_colors = {}
+
+# raw and compensated trajectories (players)
+raw_traj = defaultdict(lambda: deque(maxlen=50))
+comp_traj = defaultdict(lambda: deque(maxlen=50))
 
 def get_color(track_id):
     if track_id not in track_colors:
@@ -86,7 +86,7 @@ for frame_idx in tqdm(range(total_frames)):
         verbose=False
     )
 
-    # Ball tracking
+    # Ball Tracker
     football_tracker.ball_detection(ball_detect[0].boxes)
     cv2.circle(frame, football_tracker.ball_xy, 6, (0,255,255), -1)
     cv2.putText(
@@ -101,7 +101,7 @@ for frame_idx in tqdm(range(total_frames)):
 
     compensator.gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
 
-    # YOLO tracker
+    # YOLO Player Tracker
     results = player_model.track(
         frame,
         persist=True,
@@ -121,7 +121,7 @@ for frame_idx in tqdm(range(total_frames)):
     xys = boxes.xyxy.cpu().numpy()
 
     # Camera Motion Compensation
-    compensator.compensating(football_tracker.ball_xy, xys, frame)
+    compensator.compensate(football_tracker.ball_xy, xys, frame)
 
     # Update trajectories and draw per-track
     for tid, (x1, y1, x2, y2) in zip(ids, xys):

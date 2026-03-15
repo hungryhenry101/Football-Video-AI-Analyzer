@@ -1,7 +1,6 @@
 from collections import deque
 import numpy as np
 import cv2
-from core.ui_mask import UIMaskDetector
 
 class CMC:
     def __init__(self, width, height, has_display):
@@ -15,27 +14,14 @@ class CMC:
         self.transform_history = deque(maxlen=5)  # store recent transforms for smoothing
         self.cumulative_M = np.eye(3, dtype=np.float32)  # 从参考帧到当前帧的累积变换
 
-        self.ui_detector = UIMaskDetector(width, height)
-        self.ui_mask = self.ui_detector.ui_mask
-
         if self.mask_visible:
             cv2.namedWindow("CMC Mask", cv2.WINDOW_NORMAL)
 
-    def compensating(self, ball_xy, xys, frame):
+    def compensate(self, ball_xy, xys, frame):
         detection_mask = np.ones((self.height, self.width), dtype=np.uint8) * 255
 
         if self.prev_gray is None:
             self.cumulative_M = np.eye(3, dtype=np.float32)
-
-        if self.M_to_ref is not None:
-            has_motion, motion_strength = self.ui_detector.check_camera_motion(self.M_to_ref)
-            if has_motion:
-                print(f"Camera motion detected (strength: {motion_strength:.2f})")
-            else:
-                print("Camera motion too low, skipping UI mask update")
-                self.ui_detector.soft_reset()
-        else:
-            print("M_to_ref is None, skipping UI mask update")
 
         if self.prev_gray is not None:
             for x1, y1, x2, y2 in xys.astype(int):
@@ -53,9 +39,6 @@ class CMC:
                     mask_vis = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
                 else:
                     mask_vis = frame.copy()
-
-                ui_mask_marked = (self.ui_mask == 0)
-                mask_vis[ui_mask_marked] = [0, 255, 255]
 
                 detection_marked = (detection_mask == 0)
                 mask_vis[detection_marked] = [0, 0, 255]
@@ -96,17 +79,6 @@ class CMC:
                         continue
                     x, y = int(x), int(y)
                     flow_data.append((x, y, mag))
-
-                # UI MASK
-                if self.M_to_ref is not None:
-                    self.ui_mask = self.ui_detector.update(
-                        flow_data,
-                        pts_prev.reshape(-1, 2),
-                        self.M_to_ref,
-                        self.gray
-                    )
-                    debug_info = self.ui_detector.get_debug_info()
-                    print(f"UI pixels: {debug_info['ui_pixels']}; Valid points: {debug_info['valid_points']}; Confidence: {debug_info['confidence_mean']:.3f}")
 
                 # 仅使用状态为1且误差较小的点进行变换估计
                 good_mask = (status.flatten() == 1) & (err.flatten() < 10.0)
