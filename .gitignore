@@ -2,9 +2,9 @@ __pycache__/
 .DS_Store
 .vscode/
 .claude/
+.idea/
+.pytest_cache
 
 models/*
 
-output/out.mp4
-output/track_log.csv
-output/track_trajectories.png
+output
