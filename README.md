@@ -47,6 +47,26 @@ pip install -r requirements.txt
 
 ---
 
+## 测试新模型
+
+发现了一个名叫 Soccer-Net 的项目，其中有关于相机标定的部分，开源仓库 [sn-calibration](https://github.com/SoccerNet/sn-calibration) 中有训练好的 segmentation model。于是写了一个测试文件，效果不错：
+
+ - 基本测试: ` python test_pitch_segmentation.py --input input_vids/ `
+
+ - 保存详细可视化视频:  ` python test_pitch_segmentation.py --input input_vids/ --save-viz `
+
+ - 显示图像可视化窗口:  ` python test_pitch_segmentation.py --input test.png --show `
+
+ - 限制处理帧数（测试用）: ` python test_pitch_segmentation.py --input input_vids/ --max-frames 50 `
+
+ - 输出：
+   - `output/test_pitch_segmentation/blended_*.png` - 叠加图
+   - `output/test_pitch_segmentation/detailed_viz_*.png` - 详细可视化
+   - `output/test_pitch_segmentation/segmentation_*.mp4` - 分割视频
+   - `output/test_pitch_segmentation/detailed_viz_*.mp4` - 详细可视化视频
+
+---
+
 ## TODO
 
 - [ ] 自动生成守门员处理球集锦
