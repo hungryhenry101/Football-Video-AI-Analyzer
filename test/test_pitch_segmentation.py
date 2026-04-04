@@ -94,7 +94,7 @@ class SoccerPitch:
 class SegmentationNetwork:
     def __init__(self, model_file, mean_file, std_file, num_classes=29, width=640, height=360):
         file_path = Path(model_file).resolve()
-        model = nn.DataParallel(deeplabv3_resnet50(pretrained=False, num_classes=num_classes))
+        model = nn.DataParallel(deeplabv3_resnet50(weights=None,weights_backbone=None, num_classes=num_classes))
         self.init_weight(model, nn.init.kaiming_normal_,
                          nn.BatchNorm2d, 1e-3, 0.1,
                          mode='fan_in')
@@ -203,7 +203,7 @@ def blend_images(original, color_mask, alpha=0.6):
     return blended
 
 
-def visualize_segmentation_detailed(image, mask, class_stats):
+def visualize_segmentation_detailed(image, mask, class_stats, annotate_confidence=False):
     """
     Create a detailed visualization with segmentation overlay and class statistics.
 
@@ -211,42 +211,63 @@ def visualize_segmentation_detailed(image, mask, class_stats):
         image: Original BGR image
         mask: Segmentation mask (HxW)
         class_stats: Dictionary of {class_name: percentage}
+        annotate_confidence: If True, annotate confidence on each connected region
 
     Returns:
         viz: Visualization image with multiple panels
     """
     h, w = image.shape[:2]
 
+    # Dynamic font scale based on image dimensions
+    base_font_scale = min(h, w) / 1000.0
+    title_font_scale = max(0.8, base_font_scale * 1.2)
+    stats_font_scale = max(0.5, base_font_scale)
+    stats_thickness = max(1, int(base_font_scale * 2))
+
+    # Line height and indicator size scaled to image
+    line_height = int(30 * base_font_scale)
+    indicator_size = int(15 * base_font_scale)
+
     # Create color mask
     color_mask = create_color_mask(mask)
+
+    # Annotate confidence on mask if requested
+    if annotate_confidence:
+        color_mask = annotate_mask_with_confidence(mask, class_stats)
+
     color_mask_resized = cv2.resize(color_mask, (w, h), interpolation=cv2.INTER_LINEAR)
     color_mask_bgr = cv2.cvtColor(color_mask_resized, cv2.COLOR_RGB2BGR)
 
     # Blend
     blended = cv2.addWeighted(image, 0.5, color_mask_bgr, 0.5, 0)
 
-    # Create visualization with multiple panels
-    # Calculate required height for stats panel
-    num_classes = len(class_stats)
-    stats_height = max(150, num_classes * 25 + 50)
-    stats_width = 300
+    # Create main panel (side by side)
+    main_viz = np.hstack([blended, color_mask_bgr])
+    main_viz_h, main_viz_w = main_viz.shape[:2]
 
-    # Create main panel (original + blended side by side)
-    main_viz = np.hstack([image, blended, color_mask_bgr])
-
-    # Create stats panel
-    stats_panel = np.ones((stats_height, stats_width, 3), dtype=np.uint8) * 255
+    # Create horizontal stats panel at the bottom
+    # Calculate stats panel height
+    num_visible_classes = sum(1 for pct in class_stats.values() if pct >= 0.1)
+    stats_panel_height = int(max(120 * base_font_scale, num_visible_classes * line_height + 50))
+    stats_panel = np.ones((stats_panel_height, main_viz_w, 3), dtype=np.uint8) * 255
 
     # Draw title
-    cv2.putText(stats_panel, "Detected Classes", (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-    cv2.line(stats_panel, (10, 35), (stats_width - 10, 35), (0, 0, 0), 1)
+    cv2.putText(stats_panel, "Detected Classes", (int(15 * base_font_scale), int(35 * base_font_scale)),
+                cv2.FONT_HERSHEY_SIMPLEX, title_font_scale, (0, 0, 0), stats_thickness)
+    cv2.line(stats_panel,
+             (int(15 * base_font_scale), int(42 * base_font_scale)),
+             (main_viz_w - int(15 * base_font_scale), int(42 * base_font_scale)),
+             (0, 0, 0), stats_thickness)
 
-    # Draw class statistics
-    y_offset = 55
+    # Draw class statistics in a horizontal layout (wrap to next line if needed)
+    y_offset = int(60 * base_font_scale)
+    x_offset = int(15 * base_font_scale)
+    max_x = main_viz_w - int(15 * base_font_scale)
+
     for i, (class_name, percentage) in enumerate(class_stats.items()):
         if percentage < 0.1:
             continue
+
         # Get class color
         class_idx = list(SoccerPitch.lines_classes).index(class_name) if class_name in SoccerPitch.lines_classes else -1
         if class_idx >= 0:
@@ -254,22 +275,108 @@ def visualize_segmentation_detailed(image, mask, class_stats):
         else:
             color = (0, 0, 0)
 
-        # Draw colored rectangle
-        cv2.rectangle(stats_panel, (10, y_offset - 15), (25, y_offset), color, -1)
+        # Truncate class name if too long
+        display_name = class_name[:25] if len(class_name) > 25 else class_name
 
-        # Draw text
-        text = f"{class_name[:20]:20s} {percentage:5.2f}%"
-        cv2.putText(stats_panel, text, (35, y_offset),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
-        y_offset += 25
+        # Format text with confidence
+        text = f"{display_name}: {percentage:5.2f}%"
 
-    # Resize main_viz to match stats panel height
-    main_viz_resized = cv2.resize(main_viz, (int(w * 3 * stats_height / h), stats_height))
+        # Calculate text width
+        (text_width, text_height), baseline = cv2.getTextSize(
+            text, cv2.FONT_HERSHEY_SIMPLEX, stats_font_scale, stats_thickness
+        )
 
-    # Combine
-    full_viz = np.hstack([main_viz_resized, stats_panel])
+        # Check if we need to wrap to next line
+        if x_offset + indicator_size * 2 + text_width > max_x:
+            x_offset = int(15 * base_font_scale)
+            y_offset += line_height
+
+        # Draw colored rectangle (indicator)
+        cv2.rectangle(stats_panel,
+                      (x_offset, int(y_offset - line_height * 0.7)),
+                      (x_offset + indicator_size, int(y_offset - line_height * 0.2)),
+                      color, -1)
+
+        # Draw text with class name and confidence
+        cv2.putText(stats_panel, text, (x_offset + int(20 * base_font_scale), y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, stats_font_scale, (0, 0, 0), stats_thickness)
+
+        x_offset += text_width + int(40 * base_font_scale)  # Add spacing between items
+
+    # Resize main_viz to match stats panel width if needed
+    full_viz = np.vstack([main_viz, stats_panel])
 
     return full_viz
+
+
+def annotate_mask_with_confidence(mask, class_stats):
+    """
+    Annotate each connected component region on the mask with its class confidence.
+
+    Args:
+        mask: Segmentation mask (HxW) with class indices
+        class_stats: Dictionary of {class_name: percentage}
+
+    Returns:
+        annotated_mask: Color mask with confidence labels drawn on each region
+    """
+    from scipy import ndimage
+
+    h, w = mask.shape
+    color_mask = create_color_mask(mask)
+
+    # Dynamic font scale based on image dimensions
+    base_font_scale = min(h, w) / 1000.0
+    font_scale = max(0.4, base_font_scale * 0.8)
+    font_thickness = max(1, int(base_font_scale * 1.5))
+
+    # Process each class
+    for class_idx_str, percentage in class_stats.items():
+        if percentage < 0.5:  # Skip very small detections
+            continue
+
+        # Find class index
+        if class_idx_str in SoccerPitch.lines_classes:
+            class_idx = SoccerPitch.lines_classes.index(class_idx_str) + 1  # +1 because 0 is background
+        else:
+            continue
+
+        # Create binary mask for this class
+        class_mask = (mask == class_idx).astype(np.uint8)
+
+        # Find connected components
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(class_mask, connectivity=8)
+
+        # Label each connected component
+        for i in range(1, num_labels):  # Skip background
+            area = stats[i, cv2.CC_STAT_AREA]
+            if area < 20:  # Skip tiny regions
+                continue
+
+            # Get centroid
+            cx, cy = int(centroids[i][0]), int(centroids[i][1])
+
+            # Calculate bounding box for text background
+            text = f"{percentage:.1f}%"
+            (text_width, text_height), baseline = cv2.getTextSize(
+                text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
+            )
+
+            # Get class color (RGB)
+            color = SoccerPitch.palette[class_idx_str]
+
+            # Draw background rectangle for better visibility
+            pad = 2
+            cv2.rectangle(color_mask,
+                         (cx - text_width // 2 - pad, cy - text_height - pad),
+                         (cx + text_width // 2 + pad, cy + pad),
+                         (0, 0, 0), -1)
+
+            # Draw confidence text (white for contrast)
+            cv2.putText(color_mask, text, (cx - text_width // 2, cy - 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thickness)
+
+    return color_mask
 
 
 def create_confidence_heatmap(mask, alpha=0.7):
@@ -336,6 +443,9 @@ def test_image(net, image_path, output_dir, save_masks=False, show_visualization
     color_mask = create_color_mask(semlines)
     blended = blend_images(image, color_mask, alpha=0.6)
 
+    # Create annotated mask with confidence labels on each region
+    annotated_mask = annotate_mask_with_confidence(semlines, class_stats)
+
     # Create detailed visualization
     detailed_viz = visualize_segmentation_detailed(image, semlines, class_stats)
 
@@ -352,6 +462,11 @@ def test_image(net, image_path, output_dir, save_masks=False, show_visualization
         color_mask_path = output_dir / f"color_mask_{image_name}.png"
         cv2.imwrite(str(color_mask_path), color_mask)
         print(f"Saved color mask: {color_mask_path}")
+
+        # Save annotated mask with confidence
+        annotated_mask_path = output_dir / f"annotated_mask_{image_name}.png"
+        cv2.imwrite(str(annotated_mask_path), cv2.cvtColor(annotated_mask, cv2.COLOR_RGB2BGR))
+        print(f"Saved annotated mask: {annotated_mask_path}")
 
     # Save blended result
     blended_path = output_dir / f"blended_{image_name}.png"
@@ -382,6 +497,7 @@ def test_image(net, image_path, output_dir, save_masks=False, show_visualization
 def test_video(net, video_path, output_dir, save_masks=False, max_frames=None,
                save_visualization=False):
     """Test on a video file."""
+    global viz_out, viz_video_path
     cap = cv2.VideoCapture(str(video_path))
 
     if not cap.isOpened():
@@ -441,7 +557,8 @@ def test_video(net, video_path, output_dir, save_masks=False, max_frames=None,
         out.write(blended)
 
         if save_visualization:
-            detailed_viz = visualize_segmentation_detailed(frame, semlines, class_stats)
+            # Create detailed visualization with confidence annotated on mask
+            detailed_viz = visualize_segmentation_detailed(frame, semlines, class_stats, annotate_confidence=True)
             detailed_viz = cv2.resize(detailed_viz, (width * 2, height))
             viz_out.write(detailed_viz)
 
@@ -525,12 +642,11 @@ def main():
         height=args.height
     )
 
+    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp']
+    video_extensions = ['.mp4', '.avi', '.mov', '.mkv']
     # Check if input is a directory
     input_path = Path(args.input)
     if input_path.is_dir():
-        # Find all images and videos
-        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp']
-        video_extensions = ['.mp4', '.avi', '.mov', '.mkv']
 
         images = [f for f in input_path.glob('*') if f.suffix.lower() in image_extensions]
         videos = [f for f in input_path.glob('*') if f.suffix.lower() in video_extensions]

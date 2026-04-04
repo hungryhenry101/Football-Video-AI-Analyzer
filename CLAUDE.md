@@ -36,8 +36,10 @@ python draw_2d.py  # Reads from output/track_log.csv
 ├── core/
 │   ├── ball_tracker.py        # Kalman Filter for ball tracking with occlusion handling
 │   ├── cmc.py                 # Camera Motion Compensation using optical flow
-│   └── calibration.py         # Camera calibration using field pose detection
+│   ├── calibration.py         # Camera calibration using field pose detection (empty file)
+│   └── ui_renderer.py         # Enhanced UI rendering with stats, mini-map, threat level
 ├── models/
+│   ├── pitch_seg_npy                  # mean.npy & std.npy for soccer_pitch_segmentation.pth
 │   ├── soccer_pitch_segmentation.pth  # DeepLabV3 ResNet50 pitch segmentation (29 classes)
 │   ├── field_pose_best.pt             # Field pose detection model (32 keypoints)
 │   ├── football_best.pt               # Player/ball detection model
@@ -111,6 +113,37 @@ Here are the complete meanings of the 32 key points in models/field_pose_best.pt
 - Computes 2x3 affine transform from current frame to reference frame
 - Uses Shi-Tomasi corners + Lucas-Kanade optical flow (masks out players/ball)
 - Outputs `M_to_ref` for compensating player positions
+
+**`core/ui_renderer.py`**: `UIRenderer` class
+- Enhanced real-time UI rendering with statistics panel
+- Features:
+  - Mini-map showing field overview with player/ball positions
+  - Frame info (FPS, frame count, player count)
+  - Goalkeeper identification (based on position near goals)
+  - Player velocity estimation (m/s)
+  - Ball status and trajectory tracking
+  - Camera motion visualization (magnitude, direction)
+  - Threat level indicator (LOW/MEDIUM/HIGH/CRITICAL)
+  - Ball possession statistics (home/away %)
+  - Color-coded legend (red for goalkeepers, yellow for ball)
+
+## Enhanced UI Features
+
+**Real-time Statistics Panel (right side, 280px wide):**
+- **Frame Info**: Current frame, FPS (current/average), player count
+- **Goalkeepers**: Detected GKs with ID and side (left/right)
+- **Player Velocities**: Top 3 fastest players with speed in m/s
+- **Ball Status**: VISIBLE/OCCLUDED state, trajectory points count
+- **Camera Motion**: Motion magnitude (px), direction (deg), vector visualization
+- **Threat Level**: Color-coded bar (green/yellow/red) with reason
+- **Possession**: Home/Away possession percentage (last 30 frames)
+
+**Main Display:**
+- Ball with glow effect and trajectory trail
+- Player bounding boxes with corner styling
+- Goalkeeper highlighting (red boxes, [GK] label)
+- Player trajectory trails (faded)
+- Speed indicators (m/s) on player labels
 
 ## Key Configuration
 
