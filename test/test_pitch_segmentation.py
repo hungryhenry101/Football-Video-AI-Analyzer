@@ -91,15 +91,22 @@ class SoccerPitch:
     }
 
 
+MEAN_PATH = '../models/pitch_seg_npy/mean.npy'
+STD_PATH = '../models/pitch_seg_npy/std.npy'
+MODEL_PATH = '../models/soccer_pitch_segmentation.pth'
 class SegmentationNetwork:
-    def __init__(self, model_file, mean_file, std_file, num_classes=29, width=640, height=360):
-        file_path = Path(model_file).resolve()
-        model = nn.DataParallel(deeplabv3_resnet50(weights=None,weights_backbone=None, num_classes=num_classes))
+    def __init__(self, width=640, height=360):
+        self.width = width
+        self.height = height
+
+        self.mean = np.load(MEAN_PATH)
+        self.std = np.load(STD_PATH)
+        model = nn.DataParallel(deeplabv3_resnet50(weights=None, weights_backbone=None, num_classes=29))
+
         self.init_weight(model, nn.init.kaiming_normal_,
                          nn.BatchNorm2d, 1e-3, 0.1,
                          mode='fan_in')
 
-        # Auto-detect best available device: CUDA > MPS > CPU
         if torch.cuda.is_available():
             self.device = torch.device('cuda')
             print(f"CUDA detected: {torch.cuda.get_device_name(0)}")
@@ -110,20 +117,13 @@ class SegmentationNetwork:
             self.device = torch.device('cpu')
             print("Using CPU")
 
-        checkpoint = torch.load(str(file_path), map_location=self.device, weights_only=False)
-        model.load_state_dict(checkpoint["model"])
+        state_dict = torch.load(MODEL_PATH, map_location=self.device)
+        model.load_state_dict(state_dict["model"])
         model.eval()
         self.model = model.to(self.device)
 
-        file_path = Path(mean_file).resolve()
-        self.mean = np.load(str(file_path))
-        file_path = Path(std_file).resolve()
-        self.std = np.load(str(file_path))
-        self.width = width
-        self.height = height
         print(f"Device: {self.device}")
         print(f"Input resolution: {width}x{height}")
-        print(f"Number of classes: {num_classes}")
 
     def init_weight(self, feature, conv_init, norm_layer, bn_eps, bn_momentum,
                     **kwargs):
@@ -136,23 +136,17 @@ class SegmentationNetwork:
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def analyse_image(self, image):
-        """
-        Process image and perform inference, returns mask of detected classes
-        :param image: BGR image
-        :return: predicted classes mask
-        """
-        img = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
-        img = np.asarray(img, np.float32) / 255.
-        img = (img - self.mean.astype(np.float32)) / self.std.astype(np.float32)
-        img = img.transpose((2, 0, 1))
-        img = torch.from_numpy(img).float().to(self.device).unsqueeze(0)
+    def analyse_image(self, img):  # img: BGR image
+        img = cv2.resize(img, (self.width, self.height))
+        img = np.asarray(img, np.float32) / 255.  # Normalize
+        img = (img - self.mean) / self.std  # Standardize
+        img = img.transpose((2, 0, 1))  # transpose to Channel, Height, Width
+        img = torch.from_numpy(img).to(self.device,dtype=torch.float32).unsqueeze(0)  # Add batch to shape
 
         with torch.no_grad():
-            cuda_result = self.model.forward(img)
-        output = cuda_result['out'].data[0].cpu().numpy()
-        output = output.transpose(1, 2, 0)
-        output = np.asarray(np.argmax(output, axis=2), dtype=np.uint8)
+            result = self.model(img)
+        output = result['out'][0].cpu().numpy()  # Classes, Height, Width
+        output = np.asarray(np.argmax(output, axis=0), dtype=np.uint8)  # 没有很理解 Classes 到底是什么
 
         return output
 
@@ -634,10 +628,6 @@ def main():
 
     # Initialize network
     net = SegmentationNetwork(
-        args.model,
-        args.mean,
-        args.std,
-        num_classes=29,
         width=args.width,
         height=args.height
     )
