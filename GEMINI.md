@@ -1,0 +1,190 @@
+# GEMINI.md
+
+This file provides guidance to gemini when working with code in this repository. 
+
+Edit this file every time after making any changes to the structure or core code, so that when you view it next time, it won't be outdated.
+
+## Project Overview
+
+AI Goalkeeper Highlight Generator - Research/learning project for tracking people and ball in football match videos, identifying goalkeepers, and calculating threat levels to automatically generate goalkeeper highlight reels.
+
+## Quick Start
+
+```bash
+conda activate ml
+pip install -r requirements.txt
+```
+
+**Run tracking:**
+```bash
+python main.py  # Edit model paths and VIDEO_PATH in main.py first
+```
+
+**Visualize trajectories:**
+```bash
+python draw_2d.py  # Reads from output/track_log.csv
+```
+
+## Architecture
+
+```
+├── main.py                    # Entry point - YOLO detection + ByteTrack tracking + CMC
+├── draw_2d.py                 # Post-processing visualization from CSV logs
+├── test.py                    # Unit tests for calibration and other components
+├── test_pitch_segmentation.py # Test script for soccer pitch segmentation model
+├── bytetrack.yaml             # ByteTrack tracker configuration
+├── core/
+│   ├── ball_tracker.py        # Kalman Filter for ball tracking with occlusion handling
+│   ├── cmc.py                 # Camera Motion Compensation using optical flow
+│   ├── calibration.py         # Camera calibration using field pose detection (empty file)
+│   └── ui_renderer.py         # Enhanced UI rendering with stats, mini-map, threat level
+├── models/
+│   ├── pitch_seg_npy                  # mean.npy & std.npy for soccer_pitch_segmentation.pth
+│   ├── soccer_pitch_segmentation.pth  # DeepLabV3 ResNet50 pitch segmentation (29 classes)
+│   ├── field_pose_best.pt             # Field pose detection model (32 keypoints)
+│   ├── football_best.pt               # Player/ball detection model
+│   └── yolo11m.pt                     # YOLOv11 backbone
+├── sn-calibration/resources/  # Normalization files (mean.npy, std.npy)
+├── input_vids/                # Input videos
+├── output/                    # Tracking logs (CSV), rendered videos, and test outputs
+├── output/test_calibration/   # Test visualization outputs
+└── output/test_pitch_segmentation/  # Segmentation test outputs
+```
+
+## Field Pose Model
+
+Here are the complete meanings of the 32 key points in models/field_pose_best.pt:
+
+**Left Goal / Penalty Area (KP 0-12)**
+
+- KP 00: Left Penalty Area Top-Left Corner
+- KP 01: Left Penalty Area Upper Corner
+- KP 02: Left Penalty Area Left Corner
+- KP 03: Left Goal Area Top-Left Corner
+- KP 04: Left Goal Line Top
+- KP 05: Left Goal Line Bottom
+- KP 06: Left Penalty Corner 1
+- KP 07: Left Goal Area Corner
+- KP 08: Left Penalty Corner 2
+- KP 09: Left Penalty Area Top-Right Corner
+- KP 10: Left Penalty Area Bottom-Right Corner
+- KP 11: Left Penalty Area Bottom Corner
+- KP 12: Left Penalty Area Bottom-Left Corner
+
+**Center Line / Center Circle (KP 13-16, 30-31)**
+
+- KP 13: Center Circle Top
+- KP 14: Center Circle Upper
+- KP 15: Center Circle Lower
+- KP 16: Center Circle Bottom
+- KP 30: Center Line Midpoint
+- KP 31: Center Circle Center
+
+**Right Goal / Penalty Area (KP 17-29)**
+
+- KP 17: Right Penalty Area Top-Left Corner
+- KP 18: Right Penalty Area Upper Corner
+- KP 19: Right Penalty Area Right Corner
+- KP 20: Right Goal Area Bottom-Right Corner
+- KP 21: Right Penalty Corner 1
+- KP 22: Right Penalty Corner 2
+- KP 23: Right Goal Area Corner
+- KP 24: Right Penalty Area Top-Right Corner
+- KP 25: Right Penalty Area Top Edge
+- KP 26: Right Penalty Area Upper Corner
+- KP 27: Right Goal Area Top-Right Corner
+- KP 28: Right Goal Line Top
+- KP 29: Right Goal Line Bottom
+
+## Core Components
+
+**`main.py`**: Processes video frame-by-frame:
+- Ball detection via YOLO + Kalman Filter (`core/ball_tracker.py`)
+- Player detection via YOLO + ByteTrack
+- Camera motion compensation (`core/cmc.py`)
+- Outputs: `output/out.mp4`, `output/track_log.csv`
+
+**`core/ball_tracker.py`**: `BallTracker` class
+- Uses FilterPy Kalman Filter (4D state: x, y, vx, vy)
+- Selects ball detections based on proximity to predicted position
+- States: `VISIBLE` / `OCCLUDED` (after 3 consecutive misses)
+
+**`core/cmc.py`**: `CMC` class
+- Computes 2x3 affine transform from current frame to reference frame
+- Uses Shi-Tomasi corners + Lucas-Kanade optical flow (masks out players/ball)
+- Outputs `M_to_ref` for compensating player positions
+
+**`core/ui_renderer.py`**: `UIRenderer` class
+- Enhanced real-time UI rendering with statistics panel
+- Features:
+  - Mini-map showing field overview with player/ball positions
+  - Frame info (FPS, frame count, player count)
+  - Goalkeeper identification (based on position near goals)
+  - Player velocity estimation (m/s)
+  - Ball status and trajectory tracking
+  - Camera motion visualization (magnitude, direction)
+  - Threat level indicator (LOW/MEDIUM/HIGH/CRITICAL)
+  - Ball possession statistics (home/away %)
+  - Color-coded legend (red for goalkeepers, yellow for ball)
+
+## Enhanced UI Features
+
+**Real-time Statistics Panel (right side, 280px wide):**
+- **Frame Info**: Current frame, FPS (current/average), player count
+- **Goalkeepers**: Detected GKs with ID and side (left/right)
+- **Player Velocities**: Top 3 fastest players with speed in m/s
+- **Ball Status**: VISIBLE/OCCLUDED state, trajectory points count
+- **Camera Motion**: Motion magnitude (px), direction (deg), vector visualization
+- **Threat Level**: Color-coded bar (green/yellow/red) with reason
+- **Possession**: Home/Away possession percentage (last 30 frames)
+
+**Main Display:**
+- Ball with glow effect and trajectory trail
+- Player bounding boxes with corner styling
+- Goalkeeper highlighting (red boxes, [GK] label)
+- Player trajectory trails (faded)
+- Speed indicators (m/s) on player labels
+
+## Key Configuration
+
+- **Detection threshold**: `CONF_THRES = 0.15` in `main.py`
+- **Tracker settings**: `bytetrack.yaml` (thresholds, buffer, match_thresh)
+- **Ball tracker**: `MAX_MISS = 6`, validation gate threshold in `ball_tracker.py`
+- **CMC**: Requires ≥6 good feature points, ≥50% inlier ratio for valid transform
+
+## Pitch Segmentation Model
+
+**`test_pitch_segmentation.py`**: Test script for soccer pitch segmentation using DeepLabV3 ResNet50
+
+```bash
+# Run segmentation test
+conda activate ml
+python test_pitch_segmentation.py --input input_vids/ --max-frames 100 --save-viz
+
+# Show visualization windows for images
+python test_pitch_segmentation.py --input test.png --show
+
+# Save all masks
+python test_pitch_segmentation.py --input input_vids/ --save-masks
+```
+
+**Arguments:**
+- `--input`: Input image/video path or folder
+- `--output`: Output directory (default: `output/test_pitch_segmentation/`)
+- `--max-frames`: Limit frames for testing
+- `--save-masks`: Save raw segmentation masks
+- `--save-viz`: Save detailed visualization videos
+- `--show`: Show matplotlib visualization windows (images only)
+
+**29 Segmentation Classes:**
+- Boundary lines: Side line top/bottom/left/right, Middle line
+- Penalty areas: Big rect. left/right (top/bottom/main)
+- Goal areas: Small rect. left/right (top/bottom/main)
+- Circles: Circle central, Circle left, Circle right
+- Goals: Goal left/right (crossbar, post left, post right)
+
+**Outputs:**
+- `blended_*.png`: Overlay of segmentation on original (50/50 blend)
+- `detailed_viz_*.png`: Multi-panel visualization with statistics
+- `segmentation_*.mp4`: Full video with segmentation overlay
+- `detailed_viz_*.mp4`: Video with detailed visualization (side-by-side + stats)
