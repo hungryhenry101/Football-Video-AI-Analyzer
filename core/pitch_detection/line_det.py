@@ -20,7 +20,7 @@ class SegmentationNetwork:
 
         self.mean = np.load(os.path.join(project_dir, MEAN_PATH))
         self.std = np.load(os.path.join(project_dir, STD_PATH))
-        model = nn.DataParallel(deeplabv3_resnet50(weights=None,weights_backbone=None, num_classes=29))
+        model = nn.DataParallel(deeplabv3_resnet50(weights=None,weights_backbone=None, num_classes=29)) # class 0 is bg
 
         self.init_weight(model, nn.init.kaiming_normal_,
                          nn.BatchNorm2d, 1e-3, 0.1,
@@ -33,7 +33,7 @@ class SegmentationNetwork:
         else:
             self.device = torch.device('cpu')
 
-        state_dict = torch.load(MODEL_PATH, map_location=self.device)
+        state_dict = torch.load(os.path.join(project_dir, MODEL_PATH), map_location=self.device)
         model.load_state_dict(state_dict["model"])
         model.eval()
         self.model = model.to(self.device)
@@ -67,7 +67,7 @@ class SegmentationNetwork:
         return output
 
 
-class LineDetection:
+class LineDetector:
     def __init__(self, disk_radius=6, max_dist=40):
         """
         :param disk_radius: radius of the circles used for synthesizing the mask
@@ -90,6 +90,38 @@ class LineDetection:
         skeletons = self._generate_class_synthesis(semantic_mask)
         extremities = self._get_line_extremities(skeletons, width, height)
         return extremities
+
+    def _get_line_extremities(self, buckets, width, height):
+        extremities = dict()
+        for class_name, disks_list in buckets.items():
+            polyline_list = self._join_points(disks_list)
+            if not polyline_list:
+                continue
+
+            # Find the longest polyline for this class
+            longest_polyline = max(polyline_list, key=len)
+
+            # Normalize coordinates [0, 1]
+            extremities[class_name] = [
+                {'x': float(longest_polyline[0][1] / width), 'y': float(longest_polyline[0][0] / height)},
+                {'x': float(longest_polyline[-1][1] / width), 'y': float(longest_polyline[-1][0] / height)}
+            ]
+        return extremities
+
+    def _generate_class_synthesis(self, semantic_mask):
+        buckets = dict()
+        kernel = np.ones((5, 5), np.uint8)
+        # Erode to remove small noise
+        eroded_mask = cv2.erode(semantic_mask, kernel, iterations=1)
+
+        for k, class_name in enumerate(SoccerPitch.lines_classes):
+            # Class indices are k+1 because 0 is background
+            mask = eroded_mask == k + 1
+            if mask.sum() > 0:
+                disk_list = self._synthesize_mask(mask)
+                if len(disk_list):
+                    buckets[class_name] = disk_list
+        return buckets
 
     def _get_support_center(self, mask, start, disk_radius, min_support=0.1):
         x = int(start[0])
@@ -142,21 +174,6 @@ class LineDetection:
             points = np.transpose(np.nonzero(mask))
         return disks
 
-    def _generate_class_synthesis(self, semantic_mask):
-        buckets = dict()
-        kernel = np.ones((5, 5), np.uint8)
-        # Erode to remove small noise
-        eroded_mask = cv2.erode(semantic_mask, kernel, iterations=1)
-
-        for k, class_name in enumerate(SoccerPitch.lines_classes):
-            # Class indices are k+1 because 0 is background
-            mask = eroded_mask == k + 1
-            if mask.sum() > 0:
-                disk_list = self._synthesize_mask(mask)
-                if len(disk_list):
-                    buckets[class_name] = disk_list
-        return buckets
-
     def _join_points(self, point_list):
         polylines = []
         if not len(point_list):
@@ -202,19 +219,26 @@ class LineDetection:
             polylines.append(list(polyline))
         return polylines
 
-    def _get_line_extremities(self, buckets, width, height):
-        extremities = dict()
-        for class_name, disks_list in buckets.items():
-            polyline_list = self._join_points(disks_list)
-            if not polyline_list:
-                continue
 
-            # Find the longest polyline for this class
-            longest_polyline = max(polyline_list, key=len)
+# TEST
+if __name__ == '__main__':
+    test_file = "../../input_vids/test.png"
+    image = cv2.imread(test_file)
 
-            # Normalize coordinates [0, 1]
-            extremities[class_name] = [
-                {'x': float(longest_polyline[0][1] / width), 'y': float(longest_polyline[0][0] / height)},
-                {'x': float(longest_polyline[-1][1] / width), 'y': float(longest_polyline[-1][0] / height)}
-            ]
-        return extremities
+    seg_network = SegmentationNetwork("../../", 1470, 823)
+    semantic_mask = seg_network.analyse_img(image)
+
+    line_detection = LineDetector()
+    extremities = line_detection.detect(semantic_mask)
+    print(extremities)
+
+    width, height = seg_network.width, seg_network.height
+    canva = np.zeros((height, width, 3), dtype=np.uint8)
+    soccer_pitch = SoccerPitch()
+    for class_name, extremities in extremities.items():
+        color = soccer_pitch.palette[class_name]
+        cv2.line(canva, (int(extremities[0]['x'] * width),int(extremities[0]['y'] * height)),(int(extremities[1]['x'] * width), int(extremities[1]['y'] * height)),color, 2)
+
+    cv2.namedWindow('image')
+    cv2.imshow("image", canva)
+    cv2.waitKey(0)
