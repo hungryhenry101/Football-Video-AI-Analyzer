@@ -10,4 +10,4 @@ __pycache__/
 *.pth
 output/*
 
-sn-calibration
+official_demo
