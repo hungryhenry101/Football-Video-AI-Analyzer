@@ -77,22 +77,18 @@ class LineDetector:
         self.disk_radius = disk_radius
         self.max_dist = max_dist
 
-    def detect(self, semantic_mask, width=None, height=None):
+    def detect(self, semantic_mask):
         """
         Finds the extremities or sampled points of each detected class in the semantic mask.
         :param semantic_mask: 2D mask of predicted classes
-        :param width: image width for normalization (defaults to mask width)
-        :param height: image height for normalization (defaults to mask height)
         :return: dictionary {class_name: [{'x': x1, 'y': y1}, ...]}
         """
-        if height is None or width is None:
-            height, width = semantic_mask.shape
 
         skeletons = self._generate_class_synthesis(semantic_mask)
-        results = self._get_class_points(skeletons, width, height)
+        results = self._fit(skeletons)
         return results
 
-    def _get_class_points(self, buckets, width, height):
+    def _fit(self, buckets):
         results = dict()
         for class_name, disks_list in buckets.items():
             polyline_list = self._join_points(disks_list)
@@ -100,30 +96,21 @@ class LineDetector:
                 continue
 
             longest_polyline = max(polyline_list, key=len)
+            # Flatten longest_polyline to a list of (x,y) int points for fitting
+            xy_points = [(int(p[1]), int(p[0])) for p in longest_polyline]
 
             if 'Circle' in class_name and len(longest_polyline) >= 5:
-                # Flatten longest_polyline to a list of points for fitting
-                all_points = [p for p in longest_polyline]
-                
                 # fit an ellipse
-                sampled = fit_ellipse_and_sample(all_points, width, height)
-                if sampled:
-                    results[class_name] = sampled
-                    continue
+                # before: sampled = fit_ellipse_and_sample(all_points, width, height)
+                fitted = cv2.fitEllipse(np.array(xy_points))
 
-            if 'Circle' in class_name:
-                # return all points for circles to maintain shape
-                p_list = []
-                for polyline in polyline_list:
-                    for p in polyline:
-                        p_list.append({'x': float(p[1] / width), 'y': float(p[0]) / height})
-                results[class_name] = p_list
+                if fitted:
+                    results[class_name] = fitted
+
             else:
-                # Normalize coordinates [0, 1] for line extremities
                 # longest_polyline[0] is [row, col] -> [y, x]
                 results[class_name] = [
-                    {'x': float(longest_polyline[0][1] / width), 'y': float(longest_polyline[0][0] / height)},
-                    {'x': float(longest_polyline[-1][1] / width), 'y': float(longest_polyline[-1][0] / height)}
+                    xy_points[0], xy_points[-1]
                 ]
         return results
 
@@ -254,12 +241,13 @@ if __name__ == '__main__':
     width, height = seg_network.width, seg_network.height
     canva = np.zeros((height, width, 3), dtype=np.uint8)
     soccer_pitch = SoccerPitch()
-    for class_name, pts_list in extremities.items():
+    for class_name, fitted in extremities.items():
         color = soccer_pitch.palette[class_name]
         # Convert list of dicts to numpy array for cv2.polylines
-        pts = np.array([[int(p['x'] * width), int(p['y'] * height)] for p in pts_list], np.int32)
-        pts = pts.reshape((-1, 1, 2))
-        cv2.polylines(canva, [pts], False, color, 2)
+        if "Circle" in class_name:
+            cv2.ellipse(canva, fitted, soccer_pitch.palette[class_name], 2)
+        else:
+            cv2.line(canva, fitted[0], fitted[1], soccer_pitch.palette[class_name], 2)
 
     cv2.namedWindow('image')
     cv2.imshow("image", canva)
