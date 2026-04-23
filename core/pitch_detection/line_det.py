@@ -8,7 +8,7 @@ from torchvision.models.segmentation import deeplabv3_resnet50
 from soccerpitch import SoccerPitch
 import random
 import os
-from ellipse_fit import fit_ellipse_and_sample
+from ellipse_fit import fit_ellipse_arc
 
 MEAN_PATH = 'models/pitch_seg_npy/mean.npy'
 STD_PATH = 'models/pitch_seg_npy/std.npy'
@@ -79,7 +79,7 @@ class LineDetector:
 
     def detect(self, semantic_mask):
         """
-        Finds the extremities or sampled points of each detected class in the semantic mask.
+        Finds the extremities or fitted arcs of each detected class in the semantic mask.
         :param semantic_mask: 2D mask of predicted classes
         :return: dictionary {class_name: [{'x': x1, 'y': y1}, ...]}
         """
@@ -100,9 +100,8 @@ class LineDetector:
             xy_points = [(int(p[1]), int(p[0])) for p in longest_polyline]
 
             if 'Circle' in class_name and len(longest_polyline) >= 5:
-                # fit an ellipse
-                # before: sampled = fit_ellipse_and_sample(all_points, width, height)
-                fitted = cv2.fitEllipse(np.array(xy_points))
+                # fit an arc
+                fitted = fit_ellipse_arc(xy_points)
 
                 if fitted:
                     results[class_name] = fitted
@@ -231,23 +230,28 @@ if __name__ == '__main__':
     test_file = "../../input_vids/test_right.png"
     image = cv2.imread(test_file)
 
-    seg_network = SegmentationNetwork("../../", 980, 539)
+    seg_network = SegmentationNetwork("../../", 735, 404)
     semantic_mask = seg_network.analyse_img(image)
 
     line_detection = LineDetector()
-    extremities = line_detection.detect(semantic_mask)
-    print(extremities)
+    detection = line_detection.detect(semantic_mask)
+    print(detection)
 
     width, height = seg_network.width, seg_network.height
     canva = np.zeros((height, width, 3), dtype=np.uint8)
     soccer_pitch = SoccerPitch()
-    for class_name, fitted in extremities.items():
+    for class_name, fitted in detection.items():
         color = soccer_pitch.palette[class_name]
         # Convert list of dicts to numpy array for cv2.polylines
         if "Circle" in class_name:
-            cv2.ellipse(canva, fitted, soccer_pitch.palette[class_name], 2)
+            center = (int(fitted['center'][0]), int(fitted['center'][1]))
+            axes = (int(fitted['axes'][0]*2), int(fitted['axes'][1]*2))
+            angle = fitted['angle_deg']
+            start_angle = np.rad2deg(fitted['start_angle_rad'])
+            end_angle = np.rad2deg(fitted['end_angle_rad'])
+            cv2.ellipse(canva, center, axes, angle, start_angle, end_angle, color, 2)
         else:
-            cv2.line(canva, fitted[0], fitted[1], soccer_pitch.palette[class_name], 2)
+            cv2.line(canva, fitted[0], fitted[1], color, 2)
 
     cv2.namedWindow('image')
     cv2.imshow("image", canva)

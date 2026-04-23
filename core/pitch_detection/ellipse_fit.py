@@ -1,56 +1,60 @@
-# 等学了椭圆再来这里理解代码吧。。。
 import numpy as np
 import cv2
 
-def fit_ellipse_and_sample(points, width, height):
+def fit_ellipse_arc(points):
     """
-    Fits an ellipse to a set of points and returns sampled points along the fitted curve.
-    Points are in [row, col] format.
+    fits ellipse and calculate the range of angle, then return an arc
 
-    :param points: List of points in [row, col] format (y, x)
-    :param width: Image width for normalization
-    :param height: Image height for normalization
-    :return: List of dicts {'x': x, 'y': y} in normalized coordinates, or None if fitting fails.
+    :param points: List of points in (x, y) format
+    :return: dict
+        {
+            'center': (x, y),
+            'axes': (a, b),
+            'angle': angle_deg,
+            'start_angle_rad': start, # elliptical local coord sys
+            'end_angle_rad': end,
+        }
     """
     if len(points) < 5:
         print('Not enough points to fit ellipse')
         return None
 
-    # points are in [row, col] (y, x), cv2.fitEllipse expects [col, row] (x, y)
-    pts = np.array([[p[1], p[0]] for p in points], dtype=np.float32)
-    ellipse = cv2.fitEllipse(pts)
-    (xc, yc), (d1, d2), angle = ellipse
-    a, b = d1 / 2, d2 / 2
+    points = np.array(points)
 
-    theta_rad = np.deg2rad(angle)
-    cos_theta, sin_theta = np.cos(theta_rad), np.sin(theta_rad)
+    ellipse = cv2.fitEllipse(points)
+    (xc, yc), (d1, d2), angle_deg = ellipse
+    a, b = d1 / 2.0, d2 / 2.0   # semi-axes
 
-    # Find angular range of original points in local ellipse coordinates
-    pts_centered = pts - np.array([xc, yc])
-    # Rotation matrix to align with ellipse axes
-    R = np.array([[cos_theta, sin_theta],
-                  [-sin_theta, cos_theta]])
+    # calculate angles in local coords for each point
+    theta_rad = np.deg2rad(angle_deg)
+    cos_t, sin_t = np.cos(theta_rad), np.sin(theta_rad)
+    pts_centered = points - np.array([xc, yc])
+    # convert the point from global coords to local coords
+    R = np.array([[cos_t, sin_t], [-sin_t, cos_t]])
     pts_local = pts_centered @ R.T
+    # equation of ellipse: (x_local/a)^2 + (y_local/b)^2 = 1
+    # local angle = arctan2(y_local/b, x_local/a)
     pt_angles = np.arctan2(pts_local[:, 1] / b, pts_local[:, 0] / a)
 
-    # Find the arc range, handling potential wrap-around at -pi/pi
+    # sort and find the biggest gap
     pt_angles = np.sort(pt_angles)
     gaps = np.diff(pt_angles)
     max_gap_idx = np.argmax(gaps)
+
     if gaps[max_gap_idx] > np.pi:
+        # max gap is greater than pi => the arc is the minor one 劣弧
         start_angle = pt_angles[max_gap_idx + 1]
         end_angle = pt_angles[max_gap_idx] + 2 * np.pi
     else:
+        # otherwise the arc is the major one 优弧
         start_angle = pt_angles[0]
         end_angle = pt_angles[-1]
 
-    num_samples = max(20, len(points))
-    angles = np.linspace(start_angle, end_angle, num_samples)
-
-    sampled = []
-    for t in angles:
-        x_l, y_l = a * np.cos(t), b * np.sin(t)
-        x = xc + x_l * cos_theta - y_l * sin_theta
-        y = yc + x_l * sin_theta + y_l * cos_theta
-        sampled.append({'x': float(x / width), 'y': float(y / height)})
-    return sampled
+    # return an arc
+    return {
+        'center': (float(xc), float(yc)),
+        'axes': (float(a), float(b)), # semi-axes
+        'angle_deg': float(angle_deg),
+        'start_angle_rad': float(start_angle),
+        'end_angle_rad': float(end_angle),
+    }
