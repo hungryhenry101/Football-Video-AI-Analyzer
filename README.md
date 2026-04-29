@@ -1,4 +1,4 @@
-# AI Goalkeeper Highlight Generator
+# ⚽️ Football Video AI Analyzer
 
 目前该项目为研究/学习级产品，用于跟踪足球比赛中的人和球，并识别出守门员、计算威胁程度，用于最终自动生成守门员处理球集锦（未实现）。
 
@@ -12,8 +12,9 @@
 ## 已实现功能
 
 - 对比赛视频中**人（球员、守门员、教练、裁判）和球**进行检测与跟踪（基于 YOLO + ByteTrack）
+- 通过位置特征 (目前仅依靠x、y坐标) 识别守门员候选人
+- 通过 segmentation model 检测球场线
 - CMC 相机运动补偿，抵消相机转动的影响
-- 通过位置特征 (目前仅依靠x、y坐标) 排除裁判并识别守门员候选人
 
 ---
 
@@ -44,26 +45,6 @@ pip install -r requirements.txt
 4. 处理完成后：
    - 跟踪日志会保存到 `output/track_log.csv`
    - 可运行 `draw_2d.py` 查看可视化结果，会保存至 `output/track_trajectories.png`
-
----
-
-## 测试新模型
-
-发现了一个名叫 Soccer-Net 的项目，其中有关于相机标定的部分，开源仓库 [sn-calibration](https://github.com/SoccerNet/sn-calibration) 中有训练好的 segmentation model。于是写了一个测试文件，效果不错：
-
- - 基本测试: ` python test_pitch_segmentation.py --input input_vids/ `
-
- - 保存详细可视化视频:  ` python test_pitch_segmentation.py --input input_vids/ --save-viz `
-
- - 显示图像可视化窗口:  ` python test_pitch_segmentation.py --input test.png --show `
-
- - 限制处理帧数（测试用）: ` python test_pitch_segmentation.py --input input_vids/ --max-frames 50 `
-
- - 输出：
-   - `output/test_pitch_segmentation/blended_*.png` - 叠加图
-   - `output/test_pitch_segmentation/detailed_viz_*.png` - 详细可视化
-   - `output/test_pitch_segmentation/segmentation_*.mp4` - 分割视频
-   - `output/test_pitch_segmentation/detailed_viz_*.mp4` - 详细可视化视频
 
 ---
 

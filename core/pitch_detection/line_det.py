@@ -8,7 +8,6 @@ from torchvision.models.segmentation import deeplabv3_resnet50
 from soccerpitch import SoccerPitch
 import random
 import os
-from ellipse_fit import fit_ellipse_arc
 
 MEAN_PATH = 'models/pitch_seg_npy/mean.npy'
 STD_PATH = 'models/pitch_seg_npy/std.npy'
@@ -96,21 +95,24 @@ class LineDetector:
                 continue
 
             longest_polyline = max(polyline_list, key=len)
-            # Flatten longest_polyline to a list of (x,y) int points for fitting
-            xy_points = [(int(p[1]), int(p[0])) for p in longest_polyline]
 
-            if 'Circle' in class_name and len(longest_polyline) >= 5:
-                # fit an arc
-                fitted = fit_ellipse_arc(xy_points)
+            ### returning the raw point
+            # results[class_name] = longest_polyline
 
-                if fitted:
-                    results[class_name] = fitted
+            # Swap [row, col] to [col, row] for image coordinates (x, y) with three dimensions
+            pts_array = np.array(longest_polyline)[:, [1, 0]].reshape(-1, 1, 2).astype(np.float32)
+            if ('Circle' not in class_name and
+                    'Goal' not in class_name and
+                    len(longest_polyline)>4):
+                line_params = cv2.fitLine(pts_array, cv2.DIST_HUBER, 1.0, 0.01, 0.01).ravel()
+                results[class_name] = line_params
 
-            else:
-                # longest_polyline[0] is [row, col] -> [y, x]
-                results[class_name] = [
-                    xy_points[0], xy_points[-1]
-                ]
+            ### let's fit the arc AFTER homography
+            # else:
+            #     fitted = fit_ellipse_arc(pts_array)
+            #     if fitted:
+            #         results[class_name] = fitted
+
         return results
 
     def _generate_class_synthesis(self, semantic_mask):
@@ -240,18 +242,19 @@ if __name__ == '__main__':
     width, height = seg_network.width, seg_network.height
     canva = np.zeros((height, width, 3), dtype=np.uint8)
     soccer_pitch = SoccerPitch()
-    for class_name, fitted in detection.items():
+    for class_name, params in detection.items():
         color = soccer_pitch.palette[class_name]
-        # Convert list of dicts to numpy array for cv2.polylines
-        if "Circle" in class_name:
-            center = (int(fitted['center'][0]), int(fitted['center'][1]))
-            axes = (int(fitted['axes'][0]*2), int(fitted['axes'][1]*2))
-            angle = fitted['angle_deg']
-            start_angle = np.rad2deg(fitted['start_angle_rad'])
-            end_angle = np.rad2deg(fitted['end_angle_rad'])
-            cv2.ellipse(canva, center, axes, angle, start_angle, end_angle, color, 2)
-        else:
-            cv2.line(canva, fitted[0], fitted[1], color, 2)
+
+        # Visualize the fitLine
+        vx, vy, x, y = params[0], params[1], params[2], params[3]
+        lefty = int(y - x * vy / vx)
+        righty = int(y + (width - x) * vy / vx)
+        cv2.line(canva, (width - 1, righty), (0, lefty), color, 2)
+
+        ## to show the raw point
+        # for point in params:
+        #     center = (int(point[1]), int(point[0]))
+        #     cv2.circle(canva, center, 4, color, -1)
 
     cv2.namedWindow('image')
     cv2.imshow("image", canva)
