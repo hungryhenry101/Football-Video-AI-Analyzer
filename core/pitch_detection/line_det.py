@@ -103,6 +103,7 @@ class LineDetector:
             pts_array = np.array(longest_polyline)[:, [1, 0]].reshape(-1, 1, 2).astype(np.float32)
             if ('Circle' not in class_name and
                     'Goal' not in class_name and
+                    'Small rect.' not in class_name and
                     len(longest_polyline)>4):
                 line_params = cv2.fitLine(pts_array, cv2.DIST_HUBER, 1.0, 0.01, 0.01).ravel()
                 results[class_name] = line_params
@@ -226,6 +227,22 @@ class LineDetector:
             polylines.append(list(polyline))
         return polylines
 
+class Visualizer:
+    def __init__(self):
+        soccer_pitch = SoccerPitch()
+        self.palette = soccer_pitch.palette
+
+    def draw_lines(self, canvas, detections):
+        h, w = canvas.shape[:2]
+        for class_name, params in detections.items():
+            vx, vy, x, y = params
+            if abs(vx) < 1e-5:
+                continue
+            lefty = int(y - x * vy / vx)
+            righty = int(y + (w - x) * vy / vx)
+            color = self.palette[class_name][::-1] # RGB to BGR
+            cv2.line(canvas, (w - 1, righty), (0, lefty), color, 2)
+
 
 # TEST
 if __name__ == '__main__':
@@ -237,24 +254,17 @@ if __name__ == '__main__':
 
     line_detection = LineDetector()
     detection = line_detection.detect(semantic_mask)
-    print(detection)
 
     width, height = seg_network.width, seg_network.height
-    canva = np.zeros((height, width, 3), dtype=np.uint8)
-    soccer_pitch = SoccerPitch()
-    for class_name, params in detection.items():
-        color = soccer_pitch.palette[class_name]
+    canva = cv2.resize(image, (width, height)).copy()
 
-        # Visualize the fitLine
-        vx, vy, x, y = params[0], params[1], params[2], params[3]
-        lefty = int(y - x * vy / vx)
-        righty = int(y + (width - x) * vy / vx)
-        cv2.line(canva, (width - 1, righty), (0, lefty), color, 2)
+    visualizer = Visualizer()
+    visualizer.draw_lines(canva, detection)
 
-        ## to show the raw point
-        # for point in params:
-        #     center = (int(point[1]), int(point[0]))
-        #     cv2.circle(canva, center, 4, color, -1)
+    # Estimate homography
+    # homography_estimator = HomographyEstimator()
+    # H = homography_estimator.estimate(detection, canva.shape)
+    # HOW TO VISUALIZE?
 
     cv2.namedWindow('image')
     cv2.imshow("image", canva)

@@ -110,7 +110,7 @@ class SoccerPitch:
         """
         Initialize 3D coordinates of all elements of the soccer pitch.
         :param pitch_length: According to FIFA rules, length belong to [90,120] meters
-        :param pitch_width: According to FIFA rules, length belong to [45,90] meters
+        :param pitch_width: According to FIFA rules, width belong to [45,90] meters
         """
         self.PITCH_LENGTH = pitch_length
         self.PITCH_WIDTH = pitch_width

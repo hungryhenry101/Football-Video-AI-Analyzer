@@ -8,7 +8,7 @@ __pycache__/
 
 *.pt
 *.pth
-output/*
+*/output/*
 
 official_demo
 core/pitch_detection/point_det.py
