@@ -4,10 +4,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 import cv2
+from imageio.config.plugins import class_name
 from torchvision.models.segmentation import deeplabv3_resnet50
 from soccerpitch import SoccerPitch
 import random
 import os
+from homography_estimator import HomographyEstimator
 
 MEAN_PATH = 'models/pitch_seg_npy/mean.npy'
 STD_PATH = 'models/pitch_seg_npy/std.npy'
@@ -261,10 +263,10 @@ if __name__ == '__main__':
     visualizer = Visualizer()
     visualizer.draw_lines(canva, detection)
 
-    # Estimate homography
-    # homography_estimator = HomographyEstimator()
-    # H = homography_estimator.estimate(detection, canva.shape)
-    # HOW TO VISUALIZE?
+    # test homo
+    homo_est = HomographyEstimator(canva, detection)
+    homo_est.estimate()
+
 
     cv2.namedWindow('image')
     cv2.imshow("image", canva)
