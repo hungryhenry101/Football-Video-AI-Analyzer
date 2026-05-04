@@ -248,7 +248,7 @@ class Visualizer:
 
 # TEST
 if __name__ == '__main__':
-    test_file = "../../input_vids/test_right.png"
+    test_file = "../../input_vids/test11.png"
     image = cv2.imread(test_file)
 
     seg_network = SegmentationNetwork("../../", 735, 404)
@@ -263,11 +263,16 @@ if __name__ == '__main__':
     visualizer = Visualizer()
     visualizer.draw_lines(canva, detection)
 
-    # test homo
     homo_est = HomographyEstimator(canva, detection)
     homo_est.estimate()
 
+    # 可视化 1: 在原图上绘制投影球场线
+    projected_img = homo_est.draw_pitch_lines(canva.copy())
 
-    cv2.namedWindow('image')
-    cv2.imshow("image", canva)
+    # 可视化 2: 俯视图
+    bev_img = homo_est.warp(canva)
+
+    cv2.imshow("Original with Lines", canva)
+    cv2.imshow("Projected Pitch Lines", projected_img)
+    cv2.imshow("Bird's Eye View", bev_img)
     cv2.waitKey(0)
