@@ -1,3 +1,4 @@
+from core.pitch_detection.line_det import LineDetector
 import os
 import sys
 import cv2
@@ -17,6 +18,7 @@ VIDEO_PATH = "./input_vids/test.mp4" # YOUR VIDEO PATH HERE
 OUTPUT_VIDEO = "./output/out.mp4"
 CONF_THRES = 0.15  # 降低阈值以提高检测率
 
+# PLAYER & BALL MODEL
 player_model = YOLO(FOOTBALL_MODEL_PATH)
 ball_model = YOLO(FOOTBALL_MODEL_PATH)
 names = player_model.names
@@ -34,6 +36,9 @@ fps = cap.get(cv2.CAP_PROP_FPS)
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+# PITCH LINE DETECTOR
+line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), width, height)
 
 # Calculate new width for stats panel
 stats_panel_width = 400

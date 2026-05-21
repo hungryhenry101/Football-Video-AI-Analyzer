@@ -18,7 +18,6 @@ class UIRenderer:
     - Ball trajectory history
     - Player detection boxes with detailed info
     - Player velocity estimation
-    - Possession statistics
     """
 
     def __init__(self, width, height, has_display=True):

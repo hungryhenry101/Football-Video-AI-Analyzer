@@ -1,4 +1,3 @@
-import copy
 from collections import deque
 import numpy as np
 import torch
@@ -54,7 +53,7 @@ class SegmentationNetwork:
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def analyse_img(self, img): # img: BGR image
+    def forward(self, img): # img: BGR image
         img = cv2.resize(img, (self.width, self.height))
         img = np.asarray(img, np.float32) / 255. # Normalize
         img = (img - self.mean) / self.std # Standardize
@@ -70,21 +69,25 @@ class SegmentationNetwork:
 
 
 class LineDetector:
-    def __init__(self, disk_radius=6, max_dist=40):
+    def __init__(self, project_dir, width, height, disk_radius=6, max_dist=40):
         """
         :param disk_radius: radius of the circles used for synthesizing the mask
         :param max_dist: maximal distance between two points to be joined in a polyline
         """
+        self.width = width
+        self.height = height
         self.disk_radius = disk_radius
         self.max_dist = max_dist
+        self.seg_network = SegmentationNetwork(project_dir, self.width, self.height)
 
-    def detect(self, semantic_mask):
+    def detect(self, img):
         """
         Finds the extremities or fitted arcs of each detected class in the semantic mask.
         :param semantic_mask: 2D mask of predicted classes
         :return: dictionary {class_name: [{'x': x1, 'y': y1}, ...]}
         """
 
+        semantic_mask = self.seg_network.forward(img)
         skeletons = self._generate_class_synthesis(semantic_mask)
         results = self._fit(skeletons)
         return results
@@ -248,18 +251,16 @@ class Visualizer:
 
 # TEST
 if __name__ == '__main__':
-    test_file = "../../input_vids/test11.png"
+    test_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),"../../input_vids/test_right.png")
     image = cv2.imread(test_file)
 
-    seg_network = SegmentationNetwork("../../", 735, 404)
-    semantic_mask = seg_network.analyse_img(image)
+    width, height = 735, 404
 
-    line_detection = LineDetector()
-    detection = line_detection.detect(semantic_mask)
+    project_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../..")
+    line_detection = LineDetector(project_dir, width, height)
+    detection = line_detection.detect(image)
 
-    width, height = seg_network.width, seg_network.height
     canva = cv2.resize(image, (width, height)).copy()
-
     visualizer = Visualizer()
     visualizer.draw_lines(canva, detection)
 
