@@ -1,21 +1,20 @@
 from collections import deque
+import random
+import os
 import numpy as np
 import torch
 import torch.nn as nn
 import cv2
-from imageio.config.plugins import class_name
 from torchvision.models.segmentation import deeplabv3_resnet50
-from soccerpitch import SoccerPitch
-import random
-import os
-from homography_estimator import HomographyEstimator
+from .soccerpitch import SoccerPitch
+from .homography_estimator import HomographyEstimator
 
 MEAN_PATH = 'models/pitch_seg_npy/mean.npy'
 STD_PATH = 'models/pitch_seg_npy/std.npy'
 MODEL_PATH = 'models/soccer_pitch_segmentation.pth'
 
 class SegmentationNetwork:
-    def __init__(self, project_dir, width=640, height=360):
+    def __init__(self, project_dir, width, height):
         self.width = width
         self.height = height
 
@@ -264,8 +263,8 @@ if __name__ == '__main__':
     visualizer = Visualizer()
     visualizer.draw_lines(canva, detection)
 
-    homo_est = HomographyEstimator(canva, detection)
-    homo_est.estimate()
+    homo_est = HomographyEstimator(width, height)
+    homo_est.estimate(detection)
 
     # 可视化 1: 在原图上绘制投影球场线
     projected_img = homo_est.draw_pitch_lines(canva.copy())

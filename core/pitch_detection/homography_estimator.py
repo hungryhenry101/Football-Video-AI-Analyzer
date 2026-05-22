@@ -1,16 +1,15 @@
 import numpy as np
-from ultralytics.utils.torch_utils import is_parallel
-from soccerpitch import SoccerPitch
+from .soccerpitch import SoccerPitch
 import cv2
 
 class HomographyEstimator:
-    def __init__(self, canva, lines):
+    def __init__(self, width, height):
         self.H = None
         self.soccer_pitch = SoccerPitch()
-        self.canva = canva
-        self.lines = lines
+        self.width = width
+        self.height = height
 
-    def estimate(self):
+    def estimate(self, lines):
         """
         Estimate homography using intersections of detected lines.
         """
@@ -22,7 +21,7 @@ class HomographyEstimator:
         #  2. 场地四个角：TL_PITCH_CORNER, BL_PITCH_CORNER, TR_PITCH_CORNER, BR_PITCH_CORNER
 
         middel_line = side_line_bottom = side_line_left = side_line_right = side_line_top = None
-        for class_name, params in self.lines.items():
+        for class_name, params in lines.items():
             if class_name == 'Middle line':
                 middel_line = params
             if class_name == 'Side line bottom':
@@ -47,9 +46,8 @@ class HomographyEstimator:
         # Finding the HOMOGRAPHY
         src = []
         dst = []
-        h_bev, w_bev = self.canva.shape[:2]
-        scale_x = w_bev / self.soccer_pitch.PITCH_LENGTH
-        scale_y = h_bev / self.soccer_pitch.PITCH_WIDTH
+        scale_x = self.width / self.soccer_pitch.PITCH_LENGTH
+        scale_y = self.height / self.soccer_pitch.PITCH_WIDTH
         
         for name, point in intersections.items():
             if point is not None:
@@ -73,9 +71,8 @@ class HomographyEstimator:
             return img
 
         H_inv = np.linalg.inv(self.H)  # inverse
-        h_bev, w_bev = self.canva.shape[:2]
-        scale_x = w_bev / self.soccer_pitch.PITCH_LENGTH
-        scale_y = h_bev / self.soccer_pitch.PITCH_WIDTH
+        scale_x = self.width / self.soccer_pitch.PITCH_LENGTH
+        scale_y = self.height / self.soccer_pitch.PITCH_WIDTH
 
         # 获取球场所有线条的离散点
         field_polylines = self.soccer_pitch.sample_field_points()
@@ -141,5 +138,4 @@ class HomographyEstimator:
         """生成俯视图BEV Bird's Eye View"""
         if self.H is None:
             return img
-        h, w = self.canva.shape[:2]
-        return cv2.warpPerspective(img, self.H, (w, h))
+        return cv2.warpPerspective(img, self.H, (self.width, self.height))

@@ -1,20 +1,22 @@
-from core.pitch_detection.line_det import LineDetector
 import os
 import sys
+import csv
+import random
+from collections import defaultdict, deque
+
 import cv2
 from ultralytics import YOLO
 from tqdm import tqdm
-import csv
-import random
 import numpy as np
-from collections import defaultdict, deque
 import core.ball_tracker as ball_tracker
 import core.cmc as cmc
 from core.ui_renderer import UIRenderer
+from core.pitch_detection.line_det import LineDetector
+from core.pitch_detection.homography_estimator import HomographyEstimator
 
 FOOTBALL_MODEL_PATH = "models/football_best.pt"  # YOUR MODEL PATH HERE
 OVERLAY_MODEL_PATH = "models/overlay.pt"
-VIDEO_PATH = "./input_vids/test.mp4" # YOUR VIDEO PATH HERE
+VIDEO_PATH = "./input_vids/test1.mp4" # YOUR VIDEO PATH HERE
 OUTPUT_VIDEO = "./output/out.mp4"
 CONF_THRES = 0.15  # 降低阈值以提高检测率
 
@@ -38,7 +40,8 @@ height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
 # PITCH LINE DETECTOR
-line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), width, height)
+line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), int(width/2), int(height/2))
+homo_est = HomographyEstimator(width, height)
 
 # Calculate new width for stats panel
 stats_panel_width = 400
@@ -50,6 +53,10 @@ def has_display():
     if sys.platform == 'darwin' or sys.platform == 'win32':
         return True  # macOS and windows always has a display
     return 'DISPLAY' in os.environ and os.environ['DISPLAY']
+
+if has_display():
+    cv2.namedWindow("preview", cv2.WINDOW_NORMAL)
+    cv2.namedWindow("pitch", cv2.WINDOW_NORMAL)
 
 # CMC
 compensator = cmc.CMC(width, height, has_display())
@@ -85,13 +92,21 @@ def draw_traj(frame, traj, color):
         x2, y2 = pts[i]
         cv2.line(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
 
-if has_display:
-    cv2.namedWindow("preview", cv2.WINDOW_NORMAL)
 
 for frame_idx in tqdm(range(total_frames)):
     ret, frame = cap.read()
-    if not ret:
+    if not ret: # abbr. of return
+        tqdm.write("Failed to read frame")
         break
+
+    # Pitch Detection
+    tqdm.write(f"[{frame_idx}] detecting pitch")
+    pitch_dets = line_detector.detect(frame)
+    homo_est.estimate(pitch_dets)
+    visualized_pitch_det = homo_est.draw_pitch_lines(frame.copy())
+
+    if has_display():
+        cv2.imshow("pitch", visualized_pitch_det)
 
     raw_frame = frame.copy() # For CMC
 
@@ -119,7 +134,7 @@ for frame_idx in tqdm(range(total_frames)):
     )
 
     if not results or results[0].boxes is None or results[0].boxes.id is None:
-        print("no detections")
+        tqdm.write(f"[{frame_idx}] no detections")
         # Still render UI even without detections
         rendered = ui_renderer.render(
             frame, ball_xy, ball_state,
@@ -170,7 +185,7 @@ for frame_idx in tqdm(range(total_frames)):
 
     compensator.prev_gray = compensator.gray.copy()
     delay = max(1, int(1000 / fps))
-    if has_display:
+    if has_display():
         cv2.imshow("preview", rendered)
         if cv2.waitKey(delay) & 0xFF == ord('q'):
             break
