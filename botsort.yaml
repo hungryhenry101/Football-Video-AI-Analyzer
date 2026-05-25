@@ -1,0 +1,16 @@
+# botsort.yaml
+tracker_type: botsort  # choices: [bytetrack, botsort]
+track_high_thresh: 0.3
+track_low_thresh: 0.05
+new_track_thresh: 0.4
+track_buffer: 60       # Increased buffer to handle longer occlusions in football
+match_thresh: 0.8
+fuse_score: True
+
+# Internal GMC (Global Motion Compensation)
+gmc_method: sparseOptFlow # choices: [orb, sift, ecc, sparseOptFlow, area]
+# Re-Identification
+proximity_thresh: 0.5
+appearance_thresh: 0.4
+with_reid: True
+model: auto

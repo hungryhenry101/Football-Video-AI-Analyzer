@@ -8,4 +8,6 @@
    - ~~??借鉴 soccer net??~~
    - ✅使用球场关键点模型进行相机标定，而不用ui mask
 
-2. 容易把白色的鞋识别为球
+2. 容易把白色的鞋识别为球：(unsolved)
+3. ByteTrack跟人效果极差：
+   - 用 BoT-SORT
