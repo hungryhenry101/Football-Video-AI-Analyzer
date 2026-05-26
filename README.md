@@ -13,6 +13,8 @@
 
 ### I. 白线识别与拟合标准球场
 
+`core/pitch_detection`
+
 1. 使用 Segmentation Model 进行球场线识别及分类（后续计划不再依赖模型分类）
 ![pitch_detection](docs/pitch_det.png)
 
@@ -20,10 +22,11 @@
 ![birds' eye view](docs/bev.png)
 
 ### II. 球员识别（待完善）
-- 对比赛视频中**人（球员、守门员、教练、裁判）和球**进行检测与跟踪（基于 YOLO + ByteTrack）
-- 通过位置特征 (目前仅依靠x、y坐标) 识别守门员候选人
-- 通过 segmentation model 检测球场线
-- CMC 相机运动补偿，抵消相机转动的影响
+
+`core/player_tracker.py`
+
+- 对比赛视频中**人（球员、守门员、教练、裁判）和球**进行检测与跟踪（基于 YOLO + BoT-SORT）
+- ~~通过位置特征 (目前仅依靠x、y坐标) 识别守门员候选人~~
 
 ---
 
