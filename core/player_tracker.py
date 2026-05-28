@@ -55,6 +55,11 @@ class PlayerTracker:
             centers[obj["id"]] = (int((x1 + x2) / 2), int(y2))
         return centers
 
+    def project_to_pitch(self, tracked_objects, H):
+        players = self.get_player_centers(tracked_objects)
+
+
+
     def draw_tracks(self, frame, tracked_objects):
         for obj in tracked_objects:
             x1, y1, x2, y2 = map(int, obj["bbox"])
@@ -67,26 +72,11 @@ class PlayerTracker:
             name = CLASS_NAMES.get(cls, f"class_{cls}")
 
             # bbox
-            cv2.rectangle(
-                frame,
-                (x1, y1),
-                (x2, y2),
-                color,
-                2
-            )
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
             # label
             label = f"{name} #{tid} {conf:.2f}"
-
-            cv2.putText(
-                frame,
-                label,
-                (x1, y1 - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                color,
-                2
-            )
+            cv2.putText(frame,label,(x1, y1 - 10),cv2.FONT_HERSHEY_SIMPLEX,0.5,color,2)
         return frame
 
 

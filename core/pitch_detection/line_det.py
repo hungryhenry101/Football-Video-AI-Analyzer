@@ -100,7 +100,7 @@ class LineDetector:
 
             longest_polyline = max(polyline_list, key=len)
 
-            ### returning the raw point
+            ### to return the raw point
             # results[class_name] = longest_polyline
 
             # Swap [row, col] to [col, row] for image coordinates (x, y) with three dimensions

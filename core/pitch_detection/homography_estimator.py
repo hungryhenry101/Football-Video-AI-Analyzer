@@ -46,17 +46,13 @@ class HomographyEstimator:
         # Finding the HOMOGRAPHY
         src = []
         dst = []
-        scale_x = self.width / self.soccer_pitch.PITCH_LENGTH
-        scale_y = self.height / self.soccer_pitch.PITCH_WIDTH
         
         for name, point in intersections.items():
             if point is not None:
                 src.append(point)
                 # 将物理坐标（以中心为原点）转换为 BEV 画布像素坐标
                 phys_pt = self.soccer_pitch.point_dict[name]
-                pixel_x = (phys_pt[0] + self.soccer_pitch.PITCH_LENGTH / 2) * scale_x
-                pixel_y = (phys_pt[1] + self.soccer_pitch.PITCH_WIDTH / 2) * scale_y
-                dst.append((pixel_x, pixel_y))
+                dst.append(phys_pt)
                 
         if len(src) >= 4 and len(dst) >= 4:
             src = np.array(src, dtype=np.float32)
@@ -71,17 +67,13 @@ class HomographyEstimator:
             return img
 
         H_inv = np.linalg.inv(self.H)  # inverse
-        scale_x = self.width / self.soccer_pitch.PITCH_LENGTH
-        scale_y = self.height / self.soccer_pitch.PITCH_WIDTH
 
         # 获取球场所有线条的离散点
         field_polylines = self.soccer_pitch.sample_field_points()
         for name, polyline in field_polylines.items():
             pts_bev = []
             for pt_phys in polyline:
-                pixel_x = (pt_phys[0] + self.soccer_pitch.PITCH_LENGTH / 2) * scale_x
-                pixel_y = (pt_phys[1] + self.soccer_pitch.PITCH_WIDTH / 2) * scale_y
-                pts_bev.append([pixel_x, pixel_y])
+                pts_bev.append([pt_phys[0], pt_phys[1]])
 
             if not pts_bev:
                 continue
@@ -115,8 +107,7 @@ class HomographyEstimator:
         C2 = A2 * x2 + B2 * y2
 
         # 构造方程组
-        A = np.array([[A1, B1],
-                      [A2, B2]])
+        A = np.array([[A1, B1],[A2, B2]])
         C = np.array([C1, C2])
 
         # 求解
@@ -138,4 +129,26 @@ class HomographyEstimator:
         """生成俯视图BEV Bird's Eye View"""
         if self.H is None:
             return img
-        return cv2.warpPerspective(img, self.H, (self.width, self.height))
+
+        scale = 10.0  # px / m
+        half_w = 52.5
+        half_h = 34.0
+
+        # 将 (-half_w, -half_h) 平移到 (0,0)
+        tx = half_w * scale
+        ty = half_h * scale
+
+        T = np.array([[1, 0, tx],
+                      [0, 1, ty],
+                      [0, 0, 1]], dtype=np.float32)
+
+        S = np.array([[scale, 0, 0],
+                      [0, scale, 0],
+                      [0, 0, 1]], dtype=np.float32)
+
+        H_bev = T @ S @ self.H
+
+        out_w = int(2 * half_w * scale)
+        out_h = int(2 * half_h * scale)
+
+        return cv2.warpPerspective(img, H_bev, (out_w, out_h))
