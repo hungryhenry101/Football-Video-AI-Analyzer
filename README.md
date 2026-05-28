@@ -21,12 +21,23 @@
 2. 根据预设的球场线信息，计算 homography，拟合标准球场（顺便得出 Bird's Eye View）
 ![birds' eye view](docs/bev.png)
 
-### II. 球员识别（待完善）
+### II. 球员识别跟踪
 
 `core/player_tracker.py`
 
-- 对比赛视频中**人（球员、守门员、教练、裁判）和球**进行检测与跟踪（基于 YOLO + BoT-SORT）
-- ~~通过位置特征 (目前仅依靠x、y坐标) 识别守门员候选人~~
+![player_tracker](docs/player_tracker.png)
+
+1. 通过 Object Detection Model 进行球员/裁判分类
+
+2. 用 BoT-SORT 进行跟踪，会自动处理 GMC, ReId, Kalman Filter
+
+(3.) 计划通过位置特征 (目前仅依靠x、y坐标) 识别守门员候选人
+
+### III. 足球识别跟踪
+
+`core/ball_tracker.py`
+
+ - 
 
 ---
 

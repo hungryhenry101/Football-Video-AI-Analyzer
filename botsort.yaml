@@ -5,7 +5,8 @@ track_low_thresh: 0.05
 new_track_thresh: 0.4
 track_buffer: 60       # Increased buffer to handle longer occlusions in football
 match_thresh: 0.8
-fuse_score: True
+
+fuse_score: True # Combine detection confidence with track confidence
 
 # Internal GMC (Global Motion Compensation)
 gmc_method: sparseOptFlow # choices: [orb, sift, ecc, sparseOptFlow, area]

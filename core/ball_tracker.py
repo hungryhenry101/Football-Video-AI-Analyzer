@@ -1,5 +1,7 @@
 import numpy as np
 from filterpy.kalman import KalmanFilter
+from ultralytics import YOLO
+import cv2
 
 
 def is_valid_measurement(kf, z, thresh=40):  # 95%, 2D
@@ -8,6 +10,20 @@ def is_valid_measurement(kf, z, thresh=40):  # 95%, 2D
     d = y.T @ np.linalg.inv(S) @ y
     # Use chi-square gating for 2 DOF. 95% ~= 5.99, 99% ~= 9.21
     return d < thresh
+
+class BallDetector:
+    def __init__(self, model_path):
+        self.model = YOLO(model_path)
+
+    def detect(self, frame):
+        detections = self.model(
+            frame,
+            conf=0.15,
+            iou=0.45,
+            imgsz=960,
+            classes = [0]
+        )
+        return detections
 
 
 class BallTracker:
@@ -137,3 +153,23 @@ class BallTracker:
 
         # Update the visual coordinates
         self.ball_xy = (int(self.kf.x[0, 0]), int(self.kf.x[1, 0]))
+
+
+##TEST
+if __name__ == "__main__":
+    ball_detector = BallDetector("./models/football_best.pt")
+    vid = cv2.VideoCapture("./input_vids/test1.mp4")
+    while True:
+        ret, frame = vid.read()
+        det = ball_detector.detect(frame)
+        if len(det) > 0:
+            result = det[0]
+            boxes_xyxy = result.boxes.xyxy.cpu().numpy()
+            for box in boxes_xyxy:
+                x1, y1, x2, y2 = map(int, box)
+                cv2.rectangle(frame, (x1, y1), (x2, y2),(0, 255, 0), 2)
+        cv2.imshow("frame", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+    vid.release()
+    cv2.destroyAllWindows()
