@@ -8,6 +8,7 @@ class HomographyEstimator:
         self.soccer_pitch = SoccerPitch()
         self.width = width
         self.height = height
+        self.intersections = {}
 
     def estimate(self, lines):
         """
@@ -35,19 +36,18 @@ class HomographyEstimator:
 
         # TODO: more geometric constraint (such as parallel and perpendicular with central line)
 
-        intersections = {}
-        intersections['B_TOUCH_AND_HALFWAY_LINES_INTERSECTION'] = self.intersect_lines(middel_line, side_line_bottom)
-        intersections['T_TOUCH_AND_HALFWAY_LINES_INTERSECTION'] = self.intersect_lines(middel_line, side_line_top)
-        intersections['TR_PITCH_CORNER'] = self.intersect_lines(side_line_top, side_line_right)
-        intersections['TL_PITCH_CORNER'] = self.intersect_lines(side_line_left, side_line_top)
-        intersections['BR_PITCH_CORNER'] = self.intersect_lines(side_line_bottom, side_line_right)
-        intersections['BL_PITCH_CORNER'] = self.intersect_lines(side_line_bottom, side_line_left)
+        self.intersections['B_TOUCH_AND_HALFWAY_LINES_INTERSECTION'] = self.intersect_lines(middel_line, side_line_bottom)
+        self.intersections['T_TOUCH_AND_HALFWAY_LINES_INTERSECTION'] = self.intersect_lines(middel_line, side_line_top)
+        self.intersections['TR_PITCH_CORNER'] = self.intersect_lines(side_line_top, side_line_right)
+        self.intersections['TL_PITCH_CORNER'] = self.intersect_lines(side_line_left, side_line_top)
+        self.intersections['BR_PITCH_CORNER'] = self.intersect_lines(side_line_bottom, side_line_right)
+        self.intersections['BL_PITCH_CORNER'] = self.intersect_lines(side_line_bottom, side_line_left)
 
         # Finding the HOMOGRAPHY
         src = []
         dst = []
         
-        for name, point in intersections.items():
+        for name, point in self.intersections.items():
             if point is not None:
                 src.append(point)
                 # 将物理坐标（以中心为原点）转换为 BEV 画布像素坐标

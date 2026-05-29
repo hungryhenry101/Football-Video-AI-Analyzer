@@ -25,3 +25,4 @@ By this project i have learnt:
  - optical-flow: ----!!!TODO!!!---
  - Hough Transform: ----!!!TODO!!!---
  - tracking methods: ByteTrack / Bot-SORT etc. ----!!!TODO!!!---
+ - Bayes: -----!!TODO!!!---

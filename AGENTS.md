@@ -82,9 +82,9 @@ more details can be found in the comments of `core/pitch_detection/soccerpitch.p
 - Selects ball detections based on proximity to predicted position
 - States: `VISIBLE` / `OCCLUDED`
 
-**`core/cmc.py`**: `CMC` class
-- Computes 2x3 affine transform from current frame to reference frame
-- Uses Shi-Tomasi corners + Lucas-Kanade optical flow (masks out players/ball)
+**`core/cmc.py`**: `CameraMotionCompensator` class
+- Computes a 2x3 affine transform between consecutive frames using pitch line intersections (`calc_cmc(intersections)`).
+- Employs `.copy()` on input intersections to correctly store values across frames and prevent pass-by-reference identity issues.
 
 **`core/ui_renderer.py`**: `UIRenderer` class
 - Features: Mini-map, frame info, GK identification, velocity estimation, ball trajectory, camera motion vector, threat level, and possession stats.
