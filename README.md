@@ -5,10 +5,6 @@
 [![Demo Video](docs/demo.png)](docs/demo.mp4)
 <p align="center">视频输出效果</p>
 
-
-![track_trajectories](docs/compensate.png)
-<p align="center">相机运动补偿后效果平面展示</p>
-
 ## 功能
 
 ### I. 白线识别与拟合标准球场
@@ -37,7 +33,7 @@
 
 `core/ball_tracker.py`
 
- - 
+ - under working
 
 ---
 
@@ -58,7 +54,7 @@ pip install -r requirements.txt
 
 ## 如何启动？
 
-> 模型文件 ~~曾使用 YOLOv11m~~ [football-players-detection](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbcYOLOv11m)，自行训练或在 [蓝奏云](https://wwbcc.lanzoup.com/iDH023f1y7zg) 下载模型
+> 模型文件 [football-players-detection](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbcYOLOv11m)，自行训练或在 [蓝奏云](https://wwbcc.lanzoup.com/iDH023f1y7zg) 下载模型
 > 测试比赛视频已内置于 `input_vids/` 中
 
 1. 将模型文件放入 `models/`, 将比赛视频放入 `input_vids/` 

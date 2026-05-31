@@ -131,22 +131,18 @@ class HomographyEstimator:
             return img
 
         scale = 10.0  # px / m
-        half_w = 52.5
-        half_h = 34.0
+        half_w = self.soccer_pitch.PITCH_LENGTH / 2
+        half_h = self.soccer_pitch.PITCH_WIDTH / 2
 
         # 将 (-half_w, -half_h) 平移到 (0,0)
         tx = half_w * scale
         ty = half_h * scale
 
-        T = np.array([[1, 0, tx],
-                      [0, 1, ty],
+        T = np.array([[scale, 0, tx],
+                      [0, scale, ty],
                       [0, 0, 1]], dtype=np.float32)
 
-        S = np.array([[scale, 0, 0],
-                      [0, scale, 0],
-                      [0, 0, 1]], dtype=np.float32)
-
-        H_bev = T @ S @ self.H
+        H_bev = T @ self.H
 
         out_w = int(2 * half_w * scale)
         out_h = int(2 * half_h * scale)

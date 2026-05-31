@@ -2,6 +2,7 @@ import numpy as np
 from filterpy.kalman import KalmanFilter
 from ultralytics import YOLO
 import cv2
+from .pitch_detection.soccerpitch import SoccerPitch
 
 
 def is_valid_measurement(kf, z, thresh=40):  # 95%, 2D
@@ -26,149 +27,89 @@ class BallDetector:
         return detections
 
 
-class BallTracker:
-    def __init__(self):
-        self.miss_count = 0
-        self.MAX_MISS = 6
+    def project_to_pitch(self, detections, H):
+        if H is None or len(detections) == 0:
+            return []
+        # 通过 Homography 将 raw ball 投射为 pitch ball
+        bev_balls = []
+        result = detections[0]
+        boxes = result.boxes.xyxy.cpu().numpy()
+        for box in boxes:
+            x1, y1, x2, y2 = box
+            cx = (x1 + x2) / 2
+            cy = (y1 + y2) / 2
+            p_homo = np.array([cx, cy, 1.0])
+            p_bev = H @ p_homo
+            bev_balls.append(p_bev)
+        return bev_balls
 
-        self.kf = KalmanFilter(dim_x=4, dim_z=2)
-        dt = 1.0
 
-        self.kf.F = np.array([
-            [1, 0, dt, 0],
-            [0, 1, 0, dt],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1],
-        ])
-        self.kf.H = np.array([
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-        ])
+    def warp(self, balls, scale=10.0):
+        """将物理坐标（米）转换为 BEV 像素坐标。
 
-        self.kf.P *= 500.0
-        self.kf.R = np.eye(2) * 10.0
-        self.kf.Q = np.eye(4) * 0.1
+        参数:
+            balls: project_to_pitch() 的输出，每个元素是 [x_phys, y_phys, w]
+            scale: 像素/米，必须与 HomographyEstimator.warp() 的 scale 一致
 
-        self.ball_xy = None
-        self.miss = 0
+        返回:
+            [(x_bev, y_bev), ...] BEV 图像上的像素坐标列表
+        """
+        if len(balls) == 0:
+            return []
 
-        self.ball_state = "VISIBLE"
+        soccer_pitch = SoccerPitch()
+        half_w = soccer_pitch.PITCH_LENGTH / 2
+        half_h = soccer_pitch.PITCH_WIDTH / 2
 
-    def select_ball(self, dets, prev_xy, max_dist, is_initialized):
-        if len(dets) == 0:
-            return None
+        tx = half_w * scale
+        ty = half_h * scale
+        T = np.array([[scale, 0, tx],
+                      [0, scale, ty],
+                      [0, 0, 1]], dtype=np.float32)
 
-        # If not initialized, just choose the highest-confidence detection
-        if not is_initialized:
-            return max(dets, key=lambda d: d["conf"])
+        bev_points = []
+        for ball in balls:
+            p = T @ ball[:3]
+            p = p / p[2]  # 归一化齐次坐标
+            bev_points.append((int(p[0]), int(p[1])))
+        return bev_points
 
-        # Fallback to simple nearest-by-euclidean if prev_xy is provided
-        if prev_xy is None:
-            return max(dets, key=lambda d: d["conf"])
-
-        px, py = prev_xy
-        best = None
-        best_dist = max_dist
-
-        for d in dets:
-            cx, cy = d["cx"], d["cy"]
-            dist = np.hypot(cx - px, cy - py)
-            if dist < best_dist:
-                best_dist = dist
-                best = d
-        return best
-
-    def ball_detection(self, detections):
-        # 1. Properly format YOLO detections from the Boxes object
-        formatted_dets = []
-        for box in detections:
-            # Extract center x, center y, and confidence
-            xywh = box.xywh.cpu().numpy()[0]
-            conf = box.conf.cpu().numpy()[0]
-            formatted_dets.append({"cx": xywh[0], "cy": xywh[1], "conf": conf})
-
-        self.kf.predict()
-
-        # Check if we have a valid previous position
-        is_initialized = self.ball_xy is not None
-
-        # 2. Select the ball. Prefer Mahalanobis gating over raw Euclidean thresholds
-        sel = None
-        if len(formatted_dets) > 0:
-            if not is_initialized:
-                sel = max(formatted_dets, key=lambda d: d["conf"])  # highest confidence
-            else:
-                # compute Mahalanobis distance for each candidate
-                def mahalanobis_for_det(det):
-                    z = np.array([[det["cx"]], [det["cy"]]])
-                    y = z - self.kf.H @ self.kf.x
-                    S = self.kf.H @ self.kf.P @ self.kf.H.T + self.kf.R
-                    return float(y.T @ np.linalg.inv(S) @ y)
-
-                dists = [(mahalanobis_for_det(d), d) for d in formatted_dets]
-                dists.sort(key=lambda x: x[0])
-                best_d2, best_det = dists[0]
-                # gating threshold: 95%~6, 99%~9.2. Use 9.21 for visible; use larger when occluded
-                gate_thresh = 9.21 if self.ball_state == "VISIBLE" else 16.0
-                if best_d2 < gate_thresh:
-                    sel = best_det
-
-        if sel is not None:
-            z = np.array([[sel["cx"]], [sel["cy"]]])
-
-            # 3. If first detection, jump the Kalman Filter to the ball's location
-            if not is_initialized:
-                self.kf.x[0, 0] = sel["cx"]
-                self.kf.x[1, 0] = sel["cy"]
-                self.ball_xy = (int(sel["cx"]), int(sel["cy"]))
-                self.ball_state = "VISIBLE"
-                self.miss = 0
-                return  # Skip update for the first frame to stabilize
-
-            # Validation gate (only if already tracking)
-            # scale measurement noise by detection confidence (higher conf -> lower R)
-            prev_R = self.kf.R.copy()
-            try:
-                conf = float(sel.get("conf", 1.0))
-            except Exception:
-                conf = 1.0
-            conf = max(conf, 0.01)
-            self.kf.R = np.eye(2) * (10.0 / conf)
-
-            if is_valid_measurement(self.kf, z, thresh=9.21):
-                self.kf.update(z)
-                self.ball_state = "VISIBLE"
-                self.miss = 0
-            else:
-                self.miss += 1
-
-            # restore measurement noise
-            self.kf.R = prev_R
-        else:
-            self.miss += 1
-
-        if self.miss >= 3:
-            self.ball_state = "OCCLUDED"
-            print("Ball occluded.")
-
-        # Update the visual coordinates
-        self.ball_xy = (int(self.kf.x[0, 0]), int(self.kf.x[1, 0]))
 
 
 ##TEST
 if __name__ == "__main__":
     ball_detector = BallDetector("./models/football_best.pt")
-    vid = cv2.VideoCapture("./input_vids/test1.mp4")
+    vid = cv2.VideoCapture("./input_vids/test2.mp4")
+
+    from .pitch_detection.line_det import LineDetector
+    from .pitch_detection.homography_estimator import HomographyEstimator
+    width, height = 735, 404
+    line_detection = LineDetector("./", width, height)
     while True:
         ret, frame = vid.read()
-        det = ball_detector.detect(frame)
-        if len(det) > 0:
-            result = det[0]
+        frame = cv2.resize(frame,(width, height))
+
+        detection = line_detection.detect(frame)
+        canva = frame.copy()
+        homo_est = HomographyEstimator(width, height)
+        homo_est.estimate(detection)
+        bev_img = homo_est.warp(canva)
+
+        raw_ball = ball_detector.detect(frame)
+        if len(raw_ball) > 0:
+            result = raw_ball[0]
             boxes_xyxy = result.boxes.xyxy.cpu().numpy()
             for box in boxes_xyxy:
                 x1, y1, x2, y2 = map(int, box)
                 cv2.rectangle(frame, (x1, y1), (x2, y2),(0, 255, 0), 2)
+
+        p_balls = ball_detector.project_to_pitch(raw_ball, homo_est.H)
+        p_balls_bev = ball_detector.warp(p_balls)
+        for p_b in p_balls_bev:
+            cv2.circle(bev_img, p_b, 5, (0, 0, 255), -1)
+
         cv2.imshow("frame", frame)
+        cv2.imshow("bev_img", bev_img)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
     vid.release()

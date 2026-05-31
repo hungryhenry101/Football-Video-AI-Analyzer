@@ -20,10 +20,6 @@ pip install -r requirements.txt
 python main.py  # Edit model paths and VIDEO_PATH in main.py first
 ```
 
-**Visualize trajectories:**
-```bash
-python draw_2d.py  # Reads from output/track_log.csv, visualizes raw vs compensated paths
-```
 
 ## Architecture
 

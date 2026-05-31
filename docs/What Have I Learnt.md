@@ -10,15 +10,18 @@ By this project i have learnt:
 
 ## To Be Specific:
 
-### General
+### Models
  - Models: know about models and the differences between them, such as segmentation model, object detection models, etc.
+ - KV cache: ---!!!TODO!!!---
 
-### Pitch Semantic Detecting
+###  Pitch Detecting & Fitting
  - Vectors: have a deeper understanding of vectors. Know about cross product (the area of parallelogram with two vectors as its sides), dot product (projecting a vector to another and get the length) to see if two lines are parallel or perpendicular.
  - Mahalanobis vs Euclidean distance: The M take correlations and different unit into account while calculating the distance
- - Homography: to indicate how to transform an object
+ - Homography: transform lines to lines
+ - Affine Trans.: Homography while preserving parallelism 
 
 ### Ball Tracking
+ - Matrices Multiplication: transform a point from one coords sys to another
  - covariance: ----!!!TODO!!!----
  - Kalman Filter: ----!!!TODO!!!----
  - Chi-Square: ----!!!TODO!!!----
