@@ -37,6 +37,17 @@
 
 ---
 
+## TODO
+
+![project plan](docs/project_plan.jpg)
+
+- [ ] 自动生成守门员处理球集锦
+- [ ] 威胁度评分（结合位置、球速、对方球员密度等特征）
+- [ ] 守门员姿态分析、运动速度轨迹分析
+- [ ] 沉浸式看球（？）VR/gaming
+
+---
+
 ## 使用的技术与依赖
 
 - 检测模型：[football-players-detection](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbcYOLOv11m)
@@ -64,15 +75,6 @@ pip install -r requirements.txt
 4. 处理完成后：
    - 跟踪日志会保存到 `output/track_log.csv`
    - 可运行 `draw_2d.py` 查看可视化结果，会保存至 `output/track_trajectories.png`
-
----
-
-## TODO
-
-- [ ] 自动生成守门员处理球集锦
-- [ ] 威胁度评分（结合位置、球速、对方球员密度等特征）
-- [ ] 守门员姿态分析、运动速度轨迹分析
-- [ ] 沉浸式看球（？）VR/gaming
 
 ---
 

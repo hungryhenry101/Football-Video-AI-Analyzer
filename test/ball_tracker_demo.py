@@ -3,12 +3,14 @@ os.chdir("../")
 
 import cv2
 from core.ball_tracker import BallDetector
+from core.ball_tracker import BallTracker
 from core.pitch_detection.line_det import LineDetector
 from core.pitch_detection.homography_estimator import HomographyEstimator
 
 
 def main():
     ball_detector = BallDetector("models/football_best.pt")
+    tracker = BallTracker()
     vid = cv2.VideoCapture("input_vids/test2.mp4")
 
     width, height = 735, 404
@@ -30,9 +32,13 @@ def main():
         if len(raw_ball) > 0:
             result = raw_ball[0]
             boxes_xyxy = result.boxes.xyxy.cpu().numpy()
+            pred = tracker.predict()
             for box in boxes_xyxy:
                 x1, y1, x2, y2 = map(int, box)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                if pred is not None:
+                    cv2.circle(frame, (int(pred[0]), int(pred[1])), 5, (255,0,0), -1)
+                tracker.update((x1 + x2) / 2, (y1 + y2) / 2)
 
         p_balls = ball_detector.project_to_pitch(raw_ball, homo_est.H)
         p_balls_bev = ball_detector.warp(p_balls)

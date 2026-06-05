@@ -7,7 +7,6 @@ import torch.nn as nn
 import cv2
 from torchvision.models.segmentation import deeplabv3_resnet50
 from .soccerpitch import SoccerPitch
-from .homography_estimator import HomographyEstimator
 
 MEAN_PATH = 'models/pitch_seg_npy/mean.npy'
 STD_PATH = 'models/pitch_seg_npy/std.npy'
@@ -232,8 +231,6 @@ class LineDetector:
         return polylines
 
 
-
-# TESTTTT BELOW
 class Visualizer:
     def __init__(self):
         soccer_pitch = SoccerPitch()

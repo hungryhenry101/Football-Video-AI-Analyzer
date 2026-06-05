@@ -1,16 +1,8 @@
 import numpy as np
 from filterpy.kalman import KalmanFilter
 from ultralytics import YOLO
-import cv2
 from .pitch_detection.soccerpitch import SoccerPitch
 
-
-def is_valid_measurement(kf, z, thresh=40):  # 95%, 2D
-    y = z - kf.H @ kf.x
-    S = kf.H @ kf.P @ kf.H.T + kf.R
-    d = y.T @ np.linalg.inv(S) @ y
-    # Use chi-square gating for 2 DOF. 95% ~= 5.99, 99% ~= 9.21
-    return d < thresh
 
 class BallDetector:
     def __init__(self, model_path):
@@ -30,7 +22,7 @@ class BallDetector:
     def project_to_pitch(self, detections, H):
         if H is None or len(detections) == 0:
             return []
-        # 通过 Homography 将 raw ball 投射为 pitch ball
+        # project raw ball to BEV pitch ball using Homography
         bev_balls = []
         result = detections[0]
         boxes = result.boxes.xyxy.cpu().numpy()
@@ -45,14 +37,13 @@ class BallDetector:
 
 
     def warp(self, balls, scale=10.0):
-        """将物理坐标（米）转换为 BEV 像素坐标。
+        """
+        :param
+            balls: output of project_to_pitch()，[x_phys, y_phys, w]
+            scale: px/m，must be same as scale in HomographyEstimator.warp()
 
-        参数:
-            balls: project_to_pitch() 的输出，每个元素是 [x_phys, y_phys, w]
-            scale: 像素/米，必须与 HomographyEstimator.warp() 的 scale 一致
-
-        返回:
-            [(x_bev, y_bev), ...] BEV 图像上的像素坐标列表
+        :return:
+            [(x_bev, y_bev), ...] px coords for visualization of BEV
         """
         if len(balls) == 0:
             return []
@@ -70,6 +61,61 @@ class BallDetector:
         bev_points = []
         for ball in balls:
             p = T @ ball[:3]
-            p = p / p[2]  # 归一化齐次坐标
+            p = p / p[2]  # normalize homogeneous coords
             bev_points.append((int(p[0]), int(p[1])))
         return bev_points
+
+class BallTracker:
+    def __init__(self):
+        self.PENALTY_DIST_THRES = 1
+        self.PENALTY_FRAME_THRES = 10
+        soccer_pitch = SoccerPitch()
+        self.penalty_mark_l = soccer_pitch.left_penalty_mark
+        self.penalty_mark_r = soccer_pitch.right_penalty_mark
+
+        self.kf = KalmanFilter(dim_x=4, dim_z=2)
+        # [x, y, vx, vy]
+        self.kf.transitionMatrix = np.array([
+            [1, 0, 1, 0], # x_pred = 1*x_old + 0*y_old + 1*vx_old + 0*vy_old = x_old + vx_old
+            [0, 1, 0, 1], # y_pred
+            [0, 0, 1, 0], # vx_pred
+            [0, 0, 0, 1]  # vy_pred
+        ], np.float32)
+        self.kf.measurementMatrix = np.array([
+            [1, 0, 0, 0], # Zx
+            [0, 1, 0, 0]  # Zy
+        ], np.float32)
+
+        self.initialized = False
+
+    def initialize(self, x, y):
+        self.kf.x = np.array([
+            [x],
+            [y],
+            [0],
+            [0]
+        ], dtype=np.float32)
+        # Reset covariance matrix so previous filtering history doesn't leak
+        self.kf.P = np.eye(4, dtype=np.float32) * 10.
+        self.initialized = True
+
+    def predict(self):
+        if not self.initialized:
+            return None
+        self.kf.predict()  # updates self.kf.x in-place, returns None
+        x = float(self.kf.x[0])
+        y = float(self.kf.x[1])
+        return (x, y)
+
+    def update(self, x, y):
+        if not self.initialized:
+            self.initialize(x, y)
+            return
+
+        measurement = np.array([x, y], dtype=np.float32)
+        self.kf.update(measurement)
+
+    def get_velocity(self):
+        state = self.kf.x_post
+        vx = float(state[2])
+        vy = float(state[3])
