@@ -67,24 +67,29 @@ class BallDetector:
 
 class BallTracker:
     def __init__(self):
-        self.PENALTY_DIST_THRES = 1
-        self.PENALTY_FRAME_THRES = 10
         soccer_pitch = SoccerPitch()
         self.penalty_mark_l = soccer_pitch.left_penalty_mark
         self.penalty_mark_r = soccer_pitch.right_penalty_mark
 
         self.kf = KalmanFilter(dim_x=4, dim_z=2)
-        # [x, y, vx, vy]
-        self.kf.transitionMatrix = np.array([
+
+        # [x, y, vx, vy], dt = 1 frame
+        # State Transition Matrix
+        self.kf.F = np.array([
             [1, 0, 1, 0], # x_pred = 1*x_old + 0*y_old + 1*vx_old + 0*vy_old = x_old + vx_old
             [0, 1, 0, 1], # y_pred
             [0, 0, 1, 0], # vx_pred
             [0, 0, 0, 1]  # vy_pred
         ], np.float32)
-        self.kf.measurementMatrix = np.array([
+
+        # Measurement
+        self.kf.H = np.array([
             [1, 0, 0, 0], # Zx
             [0, 1, 0, 0]  # Zy
         ], np.float32)
+
+        self.kf.Q = np.eye(4) * 0.01  # process noise
+        self.kf.R = np.eye(2) * 5.0  # measurement noise
 
         self.initialized = False
 
@@ -105,7 +110,7 @@ class BallTracker:
         self.kf.predict()  # updates self.kf.x in-place, returns None
         x = float(self.kf.x[0])
         y = float(self.kf.x[1])
-        return (x, y)
+        return x, y
 
     def update(self, x, y):
         if not self.initialized:
@@ -114,8 +119,3 @@ class BallTracker:
 
         measurement = np.array([x, y], dtype=np.float32)
         self.kf.update(measurement)
-
-    def get_velocity(self):
-        state = self.kf.x_post
-        vx = float(state[2])
-        vy = float(state[3])

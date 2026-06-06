@@ -35,15 +35,15 @@ def main():
             pred = tracker.predict()
             for box in boxes_xyxy:
                 x1, y1, x2, y2 = map(int, box)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2) # green
                 if pred is not None:
-                    cv2.circle(frame, (int(pred[0]), int(pred[1])), 5, (255,0,0), -1)
+                    cv2.circle(frame, (int(pred[0]), int(pred[1])), 5, (255,0,0), -1) # blue
                 tracker.update((x1 + x2) / 2, (y1 + y2) / 2)
 
         p_balls = ball_detector.project_to_pitch(raw_ball, homo_est.H)
         p_balls_bev = ball_detector.warp(p_balls)
         for p_b in p_balls_bev:
-            cv2.circle(bev_img, p_b, 5, (0, 0, 255), -1)
+            cv2.circle(bev_img, p_b, 5, (0, 0, 255), -1) #red
 
         cv2.imshow("frame", frame)
         cv2.imshow("bev_img", bev_img)
