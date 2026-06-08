@@ -2,8 +2,7 @@ import os
 os.chdir("../")
 
 import cv2
-from core.ball_tracker import BallDetector
-from core.ball_tracker import BallTracker
+from core.ball_tracker import BallDetector, BallTracker, warp_balls
 from core.pitch_detection.line_det import LineDetector
 from core.pitch_detection.homography_estimator import HomographyEstimator
 
@@ -28,20 +27,26 @@ def main():
         homo_est.estimate(detection)
         bev_img = homo_est.warp(canva)
 
-        raw_ball = ball_detector.detect(frame)
-        if len(raw_ball) > 0:
-            result = raw_ball[0]
+        raw_balls = ball_detector.detect(frame)
+        if len(raw_balls) > 0:
+            # KF
+            candidates = ball_detector.project_to_pitch(raw_balls, homo_est.H)
+            candidates = warp_balls(candidates)
+            pred = tracker.process_frame(candidates)
+            if pred is not None:
+                cv2.circle(bev_img, (int(pred[0]), int(pred[1])), 5, (255, 0, 0), -1)  # blue
+            else:
+                print("no candidates")
+
+            # raw
+            result = raw_balls[0]
             boxes_xyxy = result.boxes.xyxy.cpu().numpy()
-            pred = tracker.predict()
             for box in boxes_xyxy:
                 x1, y1, x2, y2 = map(int, box)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2) # green
-                if pred is not None:
-                    cv2.circle(frame, (int(pred[0]), int(pred[1])), 5, (255,0,0), -1) # blue
-                tracker.update((x1 + x2) / 2, (y1 + y2) / 2)
 
-        p_balls = ball_detector.project_to_pitch(raw_ball, homo_est.H)
-        p_balls_bev = ball_detector.warp(p_balls)
+        p_balls = ball_detector.project_to_pitch(raw_balls, homo_est.H)
+        p_balls_bev = warp_balls(p_balls)
         for p_b in p_balls_bev:
             cv2.circle(bev_img, p_b, 5, (0, 0, 255), -1) #red
 

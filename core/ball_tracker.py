@@ -1,7 +1,38 @@
 import numpy as np
-from filterpy.kalman import KalmanFilter
 from ultralytics import YOLO
+from filterpy.kalman import KalmanFilter
+from scipy.stats import chi2
 from .pitch_detection.soccerpitch import SoccerPitch
+
+
+def warp_balls(balls, scale=10.0):
+    """
+    :param
+        balls: output of project_to_pitch()，[x_phys, y_phys, w]
+        scale: px/m，must be same as scale in HomographyEstimator.warp()
+
+    :return:
+        [(x_bev, y_bev), ...] px coords for visualization of BEV
+    """
+    if len(balls) == 0:
+        return []
+
+    soccer_pitch = SoccerPitch()
+    half_w = soccer_pitch.PITCH_LENGTH / 2
+    half_h = soccer_pitch.PITCH_WIDTH / 2
+
+    tx = half_w * scale
+    ty = half_h * scale
+    T = np.array([[scale, 0, tx],
+                  [0, scale, ty],
+                  [0, 0, 1]], dtype=np.float32)
+
+    bev_points = []
+    for ball in balls:
+        p = T @ ball[:3]
+        p = p / p[2]  # normalize homogeneous coords
+        bev_points.append((int(p[0]), int(p[1])))
+    return bev_points
 
 
 class BallDetector:
@@ -36,35 +67,6 @@ class BallDetector:
         return bev_balls
 
 
-    def warp(self, balls, scale=10.0):
-        """
-        :param
-            balls: output of project_to_pitch()，[x_phys, y_phys, w]
-            scale: px/m，must be same as scale in HomographyEstimator.warp()
-
-        :return:
-            [(x_bev, y_bev), ...] px coords for visualization of BEV
-        """
-        if len(balls) == 0:
-            return []
-
-        soccer_pitch = SoccerPitch()
-        half_w = soccer_pitch.PITCH_LENGTH / 2
-        half_h = soccer_pitch.PITCH_WIDTH / 2
-
-        tx = half_w * scale
-        ty = half_h * scale
-        T = np.array([[scale, 0, tx],
-                      [0, scale, ty],
-                      [0, 0, 1]], dtype=np.float32)
-
-        bev_points = []
-        for ball in balls:
-            p = T @ ball[:3]
-            p = p / p[2]  # normalize homogeneous coords
-            bev_points.append((int(p[0]), int(p[1])))
-        return bev_points
-
 class BallTracker:
     def __init__(self):
         soccer_pitch = SoccerPitch()
@@ -89,28 +91,75 @@ class BallTracker:
         ], np.float32)
 
         self.kf.Q = np.eye(4) * 0.01  # process noise
-        self.kf.R = np.eye(2) * 5.0  # measurement noise
+        self.kf.R = np.eye(2) * 9.0  # measurement noise
+
+        # gating threshold (90% confidence for chi^2 with df=2)
+        self.gate_threshold = chi2.ppf(0.9, df=2)
 
         self.initialized = False
 
     def initialize(self, x, y):
-        self.kf.x = np.array([
-            [x],
-            [y],
-            [0],
-            [0]
-        ], dtype=np.float32)
-        # Reset covariance matrix so previous filtering history doesn't leak
+        self.kf.x = np.array([[x],[y],[0],[0]], dtype=np.float32)
         self.kf.P = np.eye(4, dtype=np.float32) * 10.
         self.initialized = True
+
+    def process_frame(self, candidates):
+        # main
+        best = self.select_best_candidate(candidates)
+        if best is not None:
+            self.update(best[0], best[1])
+        return self.get_position()
+
+    def select_best_candidate(self, candidates):
+        """
+        candidates: list of (x, y) detections in BEV coordinates after warp
+        """
+        if not self.initialized:
+            # no gate on first frame
+            if len(candidates) > 0:
+                return candidates[0]
+            return None
+
+        self.predict()
+
+        best_d2 = np.inf
+        best_candidate = None
+
+        for (x, y) in candidates:
+            z = np.array([[x], [y]], dtype=np.float32)
+            d2 = self.mahalanobis_distance_squared(z)
+            if d2 < self.gate_threshold and d2 < best_d2:
+                best_d2 = d2
+                best_candidate = (x, y)
+
+        return best_candidate
+
+
+    def mahalanobis_distance_squared(self, z):
+        """
+        Compute d^2 = (z - Hx)^T S^{-1} (z - Hx)
+        where S = H P H^T + R
+        """
+        H = self.kf.H
+        x_pred = self.kf.x
+        P_pred = self.kf.P
+        R = self.kf.R
+
+        y = z - H @ x_pred  # innovation
+        S = H @ P_pred @ H.T + R
+        # Compute quadratic form
+        try:
+            inv_S = np.linalg.inv(S)
+            d2 = y.T @ inv_S @ y
+            return float(d2)
+        except np.linalg.LinAlgError:
+            return np.inf
 
     def predict(self):
         if not self.initialized:
             return None
-        self.kf.predict()  # updates self.kf.x in-place, returns None
-        x = float(self.kf.x[0])
-        y = float(self.kf.x[1])
-        return x, y
+        self.kf.predict()
+        return self.get_position()
 
     def update(self, x, y):
         if not self.initialized:
@@ -119,3 +168,8 @@ class BallTracker:
 
         measurement = np.array([x, y], dtype=np.float32)
         self.kf.update(measurement)
+
+    def get_position(self):
+        if not self.initialized:
+            return None
+        return float(self.kf.x[0]), float(self.kf.x[1])

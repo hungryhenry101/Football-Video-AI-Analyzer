@@ -23,7 +23,7 @@ By this project i have learnt:
 ### Ball Tracking
  - Matrices Multiplication: transform a point from one coords sys to another
  - covariance: ----!!!TODO!!!----
- - Kalman Filter: ----!!!TODO!!!----
+ - Kalman Filter: to predict the real state of a detection and to adjust the weight automatically.
  - Chi-Square: ----!!!TODO!!!----
  - optical-flow: ----!!!TODO!!!---
  - Hough Transform: ----!!!TODO!!!---
