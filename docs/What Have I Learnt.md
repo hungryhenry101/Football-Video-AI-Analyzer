@@ -1,12 +1,21 @@
 # What Have I Learnt
 
-By this project i have learnt:
+By this project I have learnt:
 
 ## In General:
- - Project managing: from coding workspace structure to steering the overall direction
- - English: especially in the field of Computer Vison and related maths
- - Information Gathering: through Github, AI, Google, papers...
- - Coding: familiarize with cv2, YOLO, numpy, etc.
+### Project managing: 
+ - Coding workspace structuring and management
+ - Steering the overall direction
+ - Don't dive into an approach so deeply before researching others. There may be better ways.
+
+### English:
+ - especially in the field of Computer Vison and related maths
+
+### Information Gathering: 
+ - through Github, AI, Google, papers... 
+
+### Programming:
+ - familiarize with cv2, YOLO, numpy, etc.
 
 ## To Be Specific:
 

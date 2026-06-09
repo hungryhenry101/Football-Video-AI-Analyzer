@@ -15,6 +15,12 @@ def main():
     width, height = 735, 404
     line_detection = LineDetector(".", width, height)
 
+    # Create windows once and lock positions so they don't move
+    cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
+    cv2.namedWindow("bev_img", cv2.WINDOW_NORMAL)
+    cv2.moveWindow("frame", 50, 50)
+    cv2.moveWindow("bev_img", 50 + width + 20, 50)
+
     while True:
         ret, frame = vid.read()
         if not ret:
