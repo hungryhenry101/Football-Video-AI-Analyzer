@@ -13,12 +13,13 @@
    - ~~??借鉴 soccer net??~~
    - ✅使用球场关键点模型进行相机标定，而不用ui mask
 
-2. ByteTrack跟人效果极差：
+2. ByteTrack跟人效果差：
    - 用 BoT-SORT
 
 3. 跟球不稳定、把点球点和白鞋识别为球:
-   - 用 kalman filter 代替 yolo 自带跟球
-   - 排除总在球员脚边的检测，以及固定不动且在点球点附近的检测
+   - 计算 Chi Square
+   - 用 Kalman Filter 代替 YOLO 自带跟踪器
+   - (unimplemented) 排除总在球员脚边的检测，以及固定不动且在点球点附近的检测
 
 4. 场地检测非常不稳定：
    - 不知道

@@ -90,7 +90,7 @@ class BallTracker:
             [0, 1, 0, 0]  # Zy
         ], np.float32)
 
-        self.kf.Q = np.eye(4) * 0.01  # process noise
+        self.kf.Q = np.eye(4) * 1.0  # process noise
         self.kf.R = np.eye(2) * 9.0  # measurement noise
 
         # gating threshold (90% confidence for chi^2 with df=2)
@@ -131,6 +131,9 @@ class BallTracker:
             if d2 < self.gate_threshold and d2 < best_d2:
                 best_d2 = d2
                 best_candidate = (x, y)
+
+        if best_candidate is None:
+            print("no best candidate")
 
         return best_candidate
 

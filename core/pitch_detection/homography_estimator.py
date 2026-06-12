@@ -22,6 +22,7 @@ class HomographyEstimator:
         #  2. 场地四个角：TL_PITCH_CORNER, BL_PITCH_CORNER, TR_PITCH_CORNER, BR_PITCH_CORNER
 
         middel_line = side_line_bottom = side_line_left = side_line_right = side_line_top = None
+        big_rect_left_bottom = big_rect_left_main = big_rect_left_top = big_rect_right_bottom = big_rect_right_top = big_rect_right_main = None
         for class_name, params in lines.items():
             if class_name == 'Middle line':
                 middel_line = params
@@ -33,6 +34,18 @@ class HomographyEstimator:
                 side_line_right = params
             if class_name == 'Side line top':
                 side_line_top = params
+            if class_name == 'Big rect. left bottom':
+                big_rect_left_bottom = params
+            if class_name == 'Big rect. left main':
+                big_rect_left_main = params
+            if class_name == 'Big rect. left top':
+                big_rect_left_top = params
+            if class_name == 'Big rect. right bottom':
+                big_rect_right_bottom = params
+            if class_name == 'Big rect. right main':
+                big_rect_right_main = params
+            if class_name == 'Big rect. right top':
+                big_rect_right_top = params
 
         # TODO: more geometric constraint (such as parallel and perpendicular with central line)
 
@@ -43,6 +56,15 @@ class HomographyEstimator:
         self.intersections['BR_PITCH_CORNER'] = self.intersect_lines(side_line_bottom, side_line_right)
         self.intersections['BL_PITCH_CORNER'] = self.intersect_lines(side_line_bottom, side_line_left)
 
+        self.intersections["L_PENALTY_AREA_TL_CORNER"] = self.intersect_lines(side_line_left, big_rect_left_top)
+        self.intersections["L_PENALTY_AREA_TR_CORNER"] = self.intersect_lines(big_rect_left_top, big_rect_left_main)
+        self.intersections["L_PENALTY_AREA_BL_CORNER"] = self.intersect_lines(side_line_left, big_rect_left_bottom)
+        self.intersections["L_PENALTY_AREA_BR_CORNER"] = self.intersect_lines(big_rect_left_bottom, big_rect_left_main)
+
+        self.intersections["R_PENALTY_AREA_TL_CORNER"] = self.intersect_lines(big_rect_right_top, big_rect_right_main)     # top ∩ main = TL (inner corner)
+        self.intersections["R_PENALTY_AREA_TR_CORNER"] = self.intersect_lines(side_line_right, big_rect_right_top)       # touchline ∩ top = TR (outer corner on goal line)
+        self.intersections["R_PENALTY_AREA_BL_CORNER"] = self.intersect_lines(big_rect_right_bottom, big_rect_right_main)  # bottom ∩ main = BL (inner corner)
+        self.intersections["R_PENALTY_AREA_BR_CORNER"] = self.intersect_lines(side_line_right, big_rect_right_bottom)    # touchline ∩ bottom = BR (outer corner on goal line)
         # Finding the HOMOGRAPHY
         src = []
         dst = []
