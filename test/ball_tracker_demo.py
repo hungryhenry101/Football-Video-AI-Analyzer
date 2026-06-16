@@ -2,7 +2,7 @@ import os
 os.chdir("../")
 
 import cv2
-from core.ball_tracker import BallDetector, BallTracker, warp_balls
+from core.ball_tracker import BallDetector, BallTracker
 from core.pitch_detection.line_det import LineDetector
 from core.pitch_detection.homography_estimator import HomographyEstimator
 
@@ -14,6 +14,7 @@ def main():
 
     width, height = 735, 404
     line_detection = LineDetector(".", width, height)
+    homo_est = HomographyEstimator(width, height)
 
     # Create windows once and lock positions so they don't move
     cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
@@ -29,7 +30,6 @@ def main():
 
         detection = line_detection.detect(frame)
         canva = frame.copy()
-        homo_est = HomographyEstimator(width, height)
         homo_est.estimate(detection)
         bev_img = homo_est.warp(canva)
 
@@ -37,7 +37,7 @@ def main():
         if len(raw_balls) > 0:
             # KF
             candidates = ball_detector.project_to_pitch(raw_balls, homo_est.H)
-            candidates = warp_balls(candidates)
+            candidates = homo_est.warp_points(candidates)
             pred = tracker.process_frame(candidates)
             if pred is not None:
                 cv2.circle(bev_img, (int(pred[0]), int(pred[1])), 5, (255, 0, 0), -1)  # blue
@@ -52,7 +52,7 @@ def main():
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2) # green
 
         p_balls = ball_detector.project_to_pitch(raw_balls, homo_est.H)
-        p_balls_bev = warp_balls(p_balls)
+        p_balls_bev = homo_est.warp_points(p_balls)
         for p_b in p_balls_bev:
             cv2.circle(bev_img, p_b, 5, (0, 0, 255), -1) #red
 

@@ -147,26 +147,51 @@ class HomographyEstimator:
         cross_product = v1[0] * v2[1] - v1[1] * v2[0]
         return abs(cross_product) < tolerance
 
+    def _get_bev_transform(self, scale=10.0):
+        """返回从物理坐标（米，原点在中心）到 BEV 像素坐标的变换矩阵 T。
+
+        T = [[scale, 0, tx],
+             [0, scale, ty],
+             [0, 0,    1]]
+
+        其中 tx, ty 将 (-half_w, -half_h) 平移到 (0, 0)。
+        """
+        half_w = self.soccer_pitch.PITCH_LENGTH / 2
+        half_h = self.soccer_pitch.PITCH_WIDTH / 2
+        tx = half_w * scale
+        ty = half_h * scale
+        return np.array([[scale, 0, tx],
+                         [0, scale, ty],
+                         [0, 0, 1]], dtype=np.float32)
+
     def warp(self, img):
         """生成俯视图BEV Bird's Eye View"""
         if self.H is None:
             return img
 
         scale = 10.0  # px / m
-        half_w = self.soccer_pitch.PITCH_LENGTH / 2
-        half_h = self.soccer_pitch.PITCH_WIDTH / 2
-
-        # 将 (-half_w, -half_h) 平移到 (0,0)
-        tx = half_w * scale
-        ty = half_h * scale
-
-        T = np.array([[scale, 0, tx],
-                      [0, scale, ty],
-                      [0, 0, 1]], dtype=np.float32)
-
+        T = self._get_bev_transform(scale)
         H_bev = T @ self.H
 
-        out_w = int(2 * half_w * scale)
-        out_h = int(2 * half_h * scale)
+        out_w = int(self.soccer_pitch.PITCH_LENGTH * scale)
+        out_h = int(self.soccer_pitch.PITCH_WIDTH * scale)
 
         return cv2.warpPerspective(img, H_bev, (out_w, out_h))
+
+    def warp_points(self, points, scale=10.0):
+        """将物理坐标点（project_to_pitch 的输出，齐次坐标 [x, y, w]）转换为 BEV 像素坐标。
+
+        :param points: 列表，每个元素是 (x, y, w) 齐次坐标
+        :param scale: px/m，必须与 warp() 中的 scale 一致
+        :return: [(x_bev, y_bev), ...] BEV 像素坐标列表
+        """
+        if not points:
+            return []
+
+        T = self._get_bev_transform(scale)
+        bev_points = []
+        for pt in points:
+            p = T @ pt[:3]
+            p = p / p[2]  # 归一化齐次坐标
+            bev_points.append((int(p[0]), int(p[1])))
+        return bev_points

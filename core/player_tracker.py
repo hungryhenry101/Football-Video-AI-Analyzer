@@ -1,5 +1,6 @@
 from ultralytics import YOLO
 import cv2
+import numpy as np
 
 CLASS_NAMES = {
     0: "ball",
@@ -46,6 +47,18 @@ class PlayerTracker:
 
         return objs
 
+    def project_to_pitch(self, tracked_objects, H):
+        if tracked_objects is None or H is None:
+            return []
+        players_xy = self.get_player_centers(tracked_objects)
+        bev_players = []
+        for xy in players_xy.values():
+            homo_player = np.array([xy[0], xy[1], 1])
+            player_bev = H @ homo_player
+            player_bev = player_bev / player_bev[2]
+            bev_players.append(player_bev)
+        return bev_players
+
     def get_player_centers(self, tracked_objects):
         """get bottom-center points (for homography projection)"""
         centers = {}
@@ -54,11 +67,6 @@ class PlayerTracker:
             # We use bottom-center because that's where the player touches the pitch
             centers[obj["id"]] = (int((x1 + x2) / 2), int(y2))
         return centers
-
-    def project_to_pitch(self, tracked_objects, H):
-        players = self.get_player_centers(tracked_objects)
-
-
 
     def draw_tracks(self, frame, tracked_objects):
         for obj in tracked_objects:

@@ -21,7 +21,7 @@
 
 `core/player_tracker.py`
 
-![player_tracker](docs/player_tracker.png)
+![player_tracker_and_bev](docs/player_track_bev.png)
 
 1. 通过 Object Detection Model 进行球员/裁判分类
 

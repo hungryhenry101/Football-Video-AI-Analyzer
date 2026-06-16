@@ -5,36 +5,6 @@ from scipy.stats import chi2
 from .pitch_detection.soccerpitch import SoccerPitch
 
 
-def warp_balls(balls, scale=10.0):
-    """
-    :param
-        balls: output of project_to_pitch()，[x_phys, y_phys, w]
-        scale: px/m，must be same as scale in HomographyEstimator.warp()
-
-    :return:
-        [(x_bev, y_bev), ...] px coords for visualization of BEV
-    """
-    if len(balls) == 0:
-        return []
-
-    soccer_pitch = SoccerPitch()
-    half_w = soccer_pitch.PITCH_LENGTH / 2
-    half_h = soccer_pitch.PITCH_WIDTH / 2
-
-    tx = half_w * scale
-    ty = half_h * scale
-    T = np.array([[scale, 0, tx],
-                  [0, scale, ty],
-                  [0, 0, 1]], dtype=np.float32)
-
-    bev_points = []
-    for ball in balls:
-        p = T @ ball[:3]
-        p = p / p[2]  # normalize homogeneous coords
-        bev_points.append((int(p[0]), int(p[1])))
-    return bev_points
-
-
 class BallDetector:
     def __init__(self, model_path):
         self.model = YOLO(model_path)

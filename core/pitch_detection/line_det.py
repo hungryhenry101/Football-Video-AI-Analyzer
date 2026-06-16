@@ -212,10 +212,8 @@ class LineDetector:
         return disks
 
     def _get_support_center(self, mask, start, disk_radius, min_support=0.1):
-        
         x = int(start[0])
         y = int(start[1])
-        support_pixels = 1
         result = [x, y]
         xstart = max(0, x - disk_radius)
         xend = min(mask.shape[0] - 1, x + disk_radius)
