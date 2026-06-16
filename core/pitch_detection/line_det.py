@@ -119,72 +119,6 @@ class LineDetector:
 
         return results
 
-    def _generate_class_synthesis(self, semantic_mask):
-        buckets = dict()
-        kernel = np.ones((5, 5), np.uint8)
-        # Erode to remove small noise
-        eroded_mask = cv2.erode(semantic_mask, kernel, iterations=1)
-
-        for k, class_name in enumerate(SoccerPitch.lines_classes):
-            # Class indices are k+1 because 0 is background
-            mask = eroded_mask == k + 1
-            if mask.sum() > 0:
-                disk_list = self._synthesize_mask(mask)
-                if len(disk_list):
-                    buckets[class_name] = disk_list
-        return buckets
-
-    def _get_support_center(self, mask, start, disk_radius, min_support=0.1):
-        x = int(start[0])
-        y = int(start[1])
-        support_pixels = 1
-        result = [x, y]
-        xstart = max(0, x - disk_radius)
-        xend = min(mask.shape[0] - 1, x + disk_radius)
-        ystart = max(0, y - disk_radius)
-        yend = min(mask.shape[1] - 1, y + disk_radius)
-
-        # Optimization: use slicing and masking instead of nested loops
-        y_grid, x_grid = np.ogrid[xstart:xend + 1, ystart:yend + 1]
-        dist_sq = (x_grid - y) ** 2 + (y_grid - x) ** 2
-        circle_mask = dist_sq < disk_radius ** 2
-
-        mask_roi = mask[xstart:xend + 1, ystart:yend + 1]
-        valid_pixels = np.logical_and(circle_mask, mask_roi > 0)
-
-        support_pixels = np.sum(valid_pixels)
-        if support_pixels < min_support * np.square(disk_radius) * np.pi:
-            return False, np.array(start)
-
-        coords = np.argwhere(valid_pixels)
-        result[0] = np.mean(coords[:, 0] + xstart)
-        result[1] = np.mean(coords[:, 1] + ystart)
-
-        return True, np.array(result)
-
-    def _synthesize_mask(self, semantic_mask):
-        mask = semantic_mask.copy().astype(np.uint8)
-        points = np.transpose(np.nonzero(mask))
-        disks = []
-        while len(points):
-            start = random.choice(points)
-            dist = 10.
-            success = True
-            while dist > 1.:
-                enough_support, center = self._get_support_center(mask, start, self.disk_radius)
-                if not enough_support:
-                    bad_point = np.round(center).astype(np.int32)
-                    cv2.circle(mask, (bad_point[1], bad_point[0]), self.disk_radius, 0, -1)
-                    success = False
-                    break
-                dist = np.sqrt(np.sum(np.square(center - start)))
-                start = center
-            if success:
-                disks.append(np.round(start).astype(np.int32))
-                cv2.circle(mask, (disks[-1][1], disks[-1][0]), self.disk_radius, 0, -1)
-            points = np.transpose(np.nonzero(mask))
-        return disks
-
     def _join_points(self, point_list):
         polylines = []
         if not len(point_list):
@@ -229,6 +163,82 @@ class LineDetector:
 
             polylines.append(list(polyline))
         return polylines
+
+    def _generate_class_synthesis(self, semantic_mask):
+        """ erosion """
+
+        buckets = dict()
+        kernel = np.ones((5, 5), np.uint8)
+        # Erode to remove small noise
+        eroded_mask = cv2.erode(semantic_mask, kernel, iterations=1)
+
+        for k, class_name in enumerate(SoccerPitch.lines_classes):
+            # Class indices are k+1 because 0 is background
+            mask = eroded_mask == k + 1
+            if mask.sum() > 0:
+                disk_list = self._synthesize_mask(mask)
+                if len(disk_list):
+                    buckets[class_name] = disk_list
+        return buckets
+
+    def _synthesize_mask(self, semantic_mask):
+        """
+        1. pick a random pixel
+        2. draw a circle around the pixel with r of disk_radius
+        3. calc the center of mass of all the white pixels in the circle
+        4. shift towards the center and loop
+        ps. literally like K-means clustering?
+        """
+        mask = semantic_mask.copy().astype(np.uint8)
+        points = np.transpose(np.nonzero(mask))
+        disks = []
+        while len(points):
+            start = random.choice(points)
+            dist = 10.
+            success = True
+            while dist > 1.:
+                enough_support, center = self._get_support_center(mask, start, self.disk_radius)
+                if not enough_support:
+                    bad_point = np.round(center).astype(np.int32)
+                    cv2.circle(mask, (bad_point[1], bad_point[0]), self.disk_radius, 0, -1)
+                    success = False
+                    break
+                dist = np.sqrt(np.sum(np.square(center - start)))
+                start = center
+            if success:
+                disks.append(np.round(start).astype(np.int32))
+                cv2.circle(mask, (disks[-1][1], disks[-1][0]), self.disk_radius, 0, -1)
+            points = np.transpose(np.nonzero(mask))
+        return disks
+
+    def _get_support_center(self, mask, start, disk_radius, min_support=0.1):
+        
+        x = int(start[0])
+        y = int(start[1])
+        support_pixels = 1
+        result = [x, y]
+        xstart = max(0, x - disk_radius)
+        xend = min(mask.shape[0] - 1, x + disk_radius)
+        ystart = max(0, y - disk_radius)
+        yend = min(mask.shape[1] - 1, y + disk_radius)
+
+        # Optimization: use slicing and masking instead of nested loops
+        y_grid, x_grid = np.ogrid[xstart:xend + 1, ystart:yend + 1]
+        dist_sq = (x_grid - y) ** 2 + (y_grid - x) ** 2
+        circle_mask = dist_sq < disk_radius ** 2
+
+        mask_roi = mask[xstart:xend + 1, ystart:yend + 1]
+        valid_pixels = np.logical_and(circle_mask, mask_roi > 0)
+
+        support_pixels = np.sum(valid_pixels)
+        if support_pixels < min_support * np.square(disk_radius) * np.pi:
+            return False, np.array(start)
+
+        coords = np.argwhere(valid_pixels)
+        result[0] = np.mean(coords[:, 0] + xstart)
+        result[1] = np.mean(coords[:, 1] + ystart)
+
+        return True, np.array(result)
 
 
 class Visualizer:
