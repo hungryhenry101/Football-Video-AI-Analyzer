@@ -17,8 +17,6 @@ def main():
     homo_est = HomographyEstimator(width, height)
 
     # Create windows once and lock positions so they don't move
-    cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
-    cv2.namedWindow("bev_img", cv2.WINDOW_NORMAL)
     cv2.moveWindow("frame", 50, 50)
     cv2.moveWindow("bev_img", 50 + width + 20, 50)
 
@@ -51,6 +49,7 @@ def main():
                 x1, y1, x2, y2 = map(int, box)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2) # green
 
+        # all candidates
         p_balls = ball_detector.project_to_pitch(raw_balls, homo_est.H)
         p_balls_bev = homo_est.warp_points(p_balls)
         for p_b in p_balls_bev:

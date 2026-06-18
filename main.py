@@ -3,30 +3,27 @@ import sys
 
 import cv2
 from tqdm import tqdm
-import core.ball_tracker as ball_tracker
-from core.ui_renderer import UIRenderer
 from core.pitch_detection.line_det import LineDetector
 from core.pitch_detection.homography_estimator import HomographyEstimator
 from core.player_tracker import PlayerTracker
+from core.ball_tracker import BallTracker, BallDetector
 
-FOOTBALL_MODEL_PATH = "models/football_best.pt"  # YOUR MODEL PATH HERE
-VIDEO_PATH = "./input_vids/test1.mp4" # YOUR VIDEO PATH HERE
-OUTPUT_VIDEO = "./output/out.mp4"
+FOOTBALL_MODEL_PATH = "models/football_best.pt"  # YOUR MODEL PATH
+VIDEO_PATH = "./input_vids/test2.mp4" # YOUR VIDEO PATH
 
 # VIDEO PROCESSING
 cap = cv2.VideoCapture(VIDEO_PATH)
 fps = cap.get(cv2.CAP_PROP_FPS)
-width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) / 2)  # CUSTOM WIDTH
+height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) / 2)  # CUSTOM HEIGHT
 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-# PITCH LINE DETECTOR
-line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), int(width/2), int(height/2))
+# CORE init
+line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), width, height)
 homo_est = HomographyEstimator(width, height)
-
-# Calculate new width for stats panel
-fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-writer = cv2.VideoWriter(OUTPUT_VIDEO, fourcc, fps, (width, height))
+ball_detector = BallDetector("models/football_best.pt")
+ball_tracker = BallTracker()
+player_tracker = PlayerTracker(FOOTBALL_MODEL_PATH)
 
 def has_display():
     if sys.platform == 'darwin' or sys.platform == 'win32':
@@ -34,77 +31,61 @@ def has_display():
     return 'DISPLAY' in os.environ and os.environ['DISPLAY']
 
 if has_display():
-    cv2.namedWindow("preview", cv2.WINDOW_NORMAL)
-    cv2.namedWindow("pitch", cv2.WINDOW_NORMAL)
-
-# Ball Tracker
-football_tracker = ball_tracker.BallTracker()
-# Player Tracker
-player_tracker = PlayerTracker(FOOTBALL_MODEL_PATH)
-
-# UI Renderer
-ui_renderer = UIRenderer(width, height, has_display())
+    cv2.namedWindow("cam", cv2.WINDOW_NORMAL)
+    cv2.namedWindow("bev", cv2.WINDOW_NORMAL)
+    cv2.moveWindow("cam", 50, 50)
+    cv2.moveWindow("bev", 50 + width + 20, 50)
 
 
+# MAIN LOOP
 for frame_idx in tqdm(range(total_frames)):
     ret, frame = cap.read()
-    if not ret: # abbr. of return
+    if not ret:
         tqdm.write("Failed to read frame")
         break
+    frame = cv2.resize(frame, (width, height))
+    cam_canva = frame.copy()
+    bev_canva = frame.copy()
 
+    line_dets = line_detector.detect(frame)
+    homo_est.estimate(line_dets)
+    bev_canva = homo_est.warp(bev_canva)
 
-    # Pitch Detector
-    pitch_dets = line_detector.detect(frame)
-    homo_est.estimate(pitch_dets)
-    visualized_pitch_det = homo_est.draw_pitch_lines(frame.copy())
+    player_dets = player_tracker.update(frame)
+    ball_dets = ball_detector.detect(frame)
 
-    if has_display():
-        cv2.imshow("pitch", visualized_pitch_det)
+    # BEV visualization
+    if homo_est.H is not None:
+        bev_players = player_tracker.project_to_pitch(player_dets, homo_est.H)
+        player_pts = homo_est.warp_points(bev_players)
+        if len(player_pts) > 0:
+            for player_pt in player_pts:
+                cv2.circle(bev_canva, (int(player_pt[0]), int(player_pt[1])), 5, (255, 0, 0), -1)  # blue
+        else:
+            print("no player detected")
 
+        ball_candidates = ball_detector.project_to_pitch(ball_dets, homo_est.H)
+        ball_candidates = homo_est.warp_points(ball_candidates)
+        prediction = ball_tracker.process_frame(ball_candidates)
+        if prediction is not None:
+            cv2.circle(bev_canva, (int(prediction[0]), int(prediction[1])), 5, (0, 0, 255), -1)  # red
+        else:
+            print("no ball candidates")
 
-    # Ball Tracker
-    ball_detect = ball_model(
-        frame,
-        conf=0.05,
-        classes=[ball_cls],
-        verbose=False
-    )
-    football_tracker.ball_detection(ball_detect[0].boxes)
-    ball_xy = football_tracker.ball_xy
-    ball_state = football_tracker.ball_state
+    # Camera Plane
+    player_tracker.draw_tracks(cam_canva, player_dets)
 
-
-    # Player Tracker
-    player_results = player_tracker.update(frame)
-
-    if not player_results or player_results[0].boxes is None or player_results[0].boxes.id is None:
-        tqdm.write(f"[{frame_idx}] no player detected")
-        # Still render UI even without detections
-        rendered = ui_renderer.render(frame, ball_xy, ball_state)
-        writer.write(rendered)
-        continue
-
-    boxes = player_results[0].boxes
-    ids = boxes.id.cpu().numpy()
-    xys = boxes.xyxy.cpu().numpy()
-
-    # Render enhanced UI
-    rendered = ui_renderer.render(
-        frame, ball_xy, ball_state,
-        boxes=xys, ids=ids,
-        M_to_ref=compensator.M_to_ref,
-        frame_idx=frame_idx
-    )
+    ball_boxes = ball_dets[0].boxes.xyxy.cpu().numpy()
+    for box in ball_boxes:
+        x1, y1, x2, y2 = map(int, box)
+        cv2.rectangle(cam_canva, (x1, y1), (x2, y2), (0, 0, 255), 2)  # red
 
     delay = max(1, int(1000 / fps))
     if has_display():
-        cv2.imshow("preview", rendered)
+        cv2.imshow("cam", cam_canva)
+        cv2.imshow("bev", bev_canva)
         if cv2.waitKey(delay) & 0xFF == ord('q'):
             break
-    writer.write(rendered)
 
 cv2.destroyAllWindows()
 cap.release()
-writer.release()
-
-print(f"Tracking video saved to {OUTPUT_VIDEO}")

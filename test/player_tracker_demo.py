@@ -19,7 +19,7 @@ def main():
         frame = cv2.resize(frame, (width, height))
         canvas = frame.copy()
 
-        result = tracker.update(frame)
+        result = tracker.update(canvas)
 
         l_detection = line_detector.detect(frame)
         homo_est.estimate(l_detection)
