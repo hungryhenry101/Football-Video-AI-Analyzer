@@ -2,8 +2,12 @@
 
 目前该项目为研究/学习级产品，用于跟踪足球比赛中的人和球，并识别出守门员、计算威胁程度，用于最终自动生成守门员处理球集锦（未实现）。
 
-![Overview](docs/main.png) 
-<p align="center">总体效果</p>
+<div style="text-align: center;">
+<figure>
+    <img src="docs/main.png" alt="Overview">
+    <figcaption><em>总体效果</em></figcaption>
+</figure>
+</div>
 
 ## 功能
 
@@ -11,10 +15,10 @@
 
 `core/pitch_detection`
 
-1. 使用 Segmentation Model 进行球场线识别及分类（后续计划不再依赖模型分类）
+1. 使用 Segmentation Model 进行球场线识别及分类（后续计划不再依赖模型分类，可能尝试 Hough Transform）
 ![Pitch Detection](docs/pitch_det.png)
 
-2. 根据预设的球场线信息，计算 homography，拟合标准球场（顺便得出 Bird's Eye View）
+2. 根据预设的球场线信息，计算 Homography，拟合标准球场（顺便得出 Bird's Eye View）
 ![Birds' Eye View](docs/bev.png)
 
 ### II. 球员识别跟踪
@@ -33,8 +37,12 @@
 
 `core/ball_tracker.py`
 
-![Ball Tracker](docs/ball_tracker.png)
-<p align="center">如图，红色为模型检测，蓝色为滤波处理后结果</p>
+<div style="text-align: center;">
+<figure>
+    <img src="docs/ball_tracker.png" alt="ball_tracker">
+    <figcaption><em>如图，红色为模型检测，蓝色为滤波处理后结果</em></figcaption>
+</figure>
+</div>
 
 1. 通过前面得到的H，将所有足球放到BEV坐标系中
 2. 计算所有检测点距离之前球轨迹的 Mahalanobis Distance
