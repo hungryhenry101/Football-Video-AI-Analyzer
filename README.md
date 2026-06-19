@@ -1,8 +1,10 @@
 # ⚽️ Football Video AI Analyzer
 
+简体中文｜[English](README_EN.md)
+
 目前该项目为研究/学习级产品，用于跟踪足球比赛中的人和球，并识别出守门员、计算威胁程度，用于最终自动生成守门员处理球集锦（未实现）。
 
-<div style="text-align: center;">
+<div align="center">
 <figure>
     <img src="docs/main.png" alt="Overview">
     <figcaption><em>总体效果</em></figcaption>
@@ -37,7 +39,7 @@
 
 `core/ball_tracker.py`
 
-<div style="text-align: center;">
+<div align="center">
 <figure>
     <img src="docs/ball_tracker.png" alt="ball_tracker">
     <figcaption><em>如图，红色为模型检测，蓝色为滤波处理后结果</em></figcaption>
