@@ -13,9 +13,10 @@ STD_PATH = 'models/pitch_seg_npy/std.npy'
 MODEL_PATH = 'models/soccer_pitch_segmentation.pth'
 
 class SegmentationNetwork:
-    def __init__(self, project_dir, width, height):
+    def __init__(self, project_dir, width, height, device):
         self.width = width
         self.height = height
+        self.device = device
 
         self.mean = np.load(os.path.join(project_dir, MEAN_PATH))
         self.std = np.load(os.path.join(project_dir, STD_PATH))
@@ -24,13 +25,6 @@ class SegmentationNetwork:
         self.init_weight(model, nn.init.kaiming_normal_,
                          nn.BatchNorm2d, 1e-3, 0.1,
                          mode='fan_in')
-
-        if torch.cuda.is_available():
-            self.device = torch.device('cuda')
-        elif torch.backends.mps.is_available():
-            self.device = torch.device('mps')
-        else:
-            self.device = torch.device('cpu')
 
         state_dict = torch.load(os.path.join(project_dir, MODEL_PATH), map_location=self.device)
         model.load_state_dict(state_dict["model"])
@@ -67,7 +61,7 @@ class SegmentationNetwork:
 
 
 class LineDetector:
-    def __init__(self, project_dir, width, height, disk_radius=6, max_dist=40):
+    def __init__(self, project_dir, width, height, device, disk_radius=6, max_dist=40):
         """
         :param disk_radius: radius of the circles used for synthesizing the mask
         :param max_dist: maximal distance between two points to be joined in a polyline
@@ -76,7 +70,7 @@ class LineDetector:
         self.height = height
         self.disk_radius = disk_radius
         self.max_dist = max_dist
-        self.seg_network = SegmentationNetwork(project_dir, self.width, self.height)
+        self.seg_network = SegmentationNetwork(project_dir, self.width, self.height, device)
 
     def detect(self, img):
         """
@@ -86,14 +80,18 @@ class LineDetector:
         """
 
         semantic_mask = self.seg_network.forward(img)
-        skeletons = self._generate_class_synthesis(semantic_mask)
+        skeletons = self._skeletonize(semantic_mask)
         results = self._fit(skeletons)
         return results
 
-    def _fit(self, buckets):
+    def _fit(self, skeletons):
         results = dict()
-        for class_name, disks_list in buckets.items():
-            polyline_list = self._join_points(disks_list)
+        for class_name, skel_img in skeletons.items():
+            points = np.transpose(np.nonzero(skel_img))
+            if len(points) == 0:
+                continue
+
+            polyline_list = self._join_points(points)
             if not polyline_list:
                 continue
 
@@ -118,6 +116,20 @@ class LineDetector:
             #         results[class_name] = fitted
 
         return results
+
+    def _skeletonize(self, semantic_mask):
+        skeletons = dict()
+        kernel = np.ones((5, 5), np.uint8)
+        eroded_mask = cv2.erode(semantic_mask, kernel, iterations=1)
+
+        for k, class_name in enumerate(SoccerPitch.lines_classes):
+            # 生成布尔掩码并转换为 uint8 (0 或 255)
+            mask = (eroded_mask == k + 1).astype(np.uint8) * 255
+            if mask.sum() > 0:
+                skeleton = cv2.ximgproc.thinning(mask, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
+                if skeleton is not None and np.any(skeleton):
+                    skeletons[class_name] = skeleton
+        return skeletons
 
     def _join_points(self, point_list):
         polylines = []
@@ -164,24 +176,7 @@ class LineDetector:
             polylines.append(list(polyline))
         return polylines
 
-    def _generate_class_synthesis(self, semantic_mask):
-        """ erosion """
-
-        buckets = dict()
-        kernel = np.ones((5, 5), np.uint8)
-        # Erode to remove small noise
-        eroded_mask = cv2.erode(semantic_mask, kernel, iterations=1)
-
-        for k, class_name in enumerate(SoccerPitch.lines_classes):
-            # Class indices are k+1 because 0 is background
-            mask = eroded_mask == k + 1
-            if mask.sum() > 0:
-                disk_list = self._synthesize_mask(mask)
-                if len(disk_list):
-                    buckets[class_name] = disk_list
-        return buckets
-
-    def _synthesize_mask(self, semantic_mask):
+    def _synthesize_mask(self, semantic_mask): # WILL BE REPLACED BY SKELETONIZE
         """
         1. pick a random pixel
         2. draw a circle around the pixel with r of disk_radius

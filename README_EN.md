@@ -57,6 +57,8 @@ This project is currently a research/learning prototype designed to track player
 
 ![project plan](docs/project_plan.jpg)
 
+Detailed problem list here:  [problems.md](docs/problems.md)
+
 - [ ] Automatically generate goalkeeper highlight reels
 - [ ] Threat level rating (combining location, ball speed, opponent density, etc.)
 - [ ] Goalkeeper pose analysis and velocity trajectory analysis

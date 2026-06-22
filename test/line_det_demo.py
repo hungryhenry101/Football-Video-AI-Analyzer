@@ -2,6 +2,7 @@ import os
 os.chdir("../")
 
 import cv2
+import torch
 from core.pitch_detection.line_det import LineDetector, Visualizer
 from core.pitch_detection.homography_estimator import HomographyEstimator
 
@@ -9,8 +10,9 @@ def main():
     test_file = "./input_vids/test1.png"
     image = cv2.imread(test_file)
 
+    device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
     width, height = 735, 404
-    line_detection = LineDetector("./", width, height)
+    line_detection = LineDetector("./", width, height, device)
     detection = line_detection.detect(image)
 
     canva = cv2.resize(image, (width, height)).copy()

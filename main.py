@@ -2,6 +2,7 @@ import os
 import sys
 
 import cv2
+import torch
 from tqdm import tqdm
 from core.pitch_detection.line_det import LineDetector
 from core.pitch_detection.homography_estimator import HomographyEstimator
@@ -18,12 +19,16 @@ width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) / 2)  # CUSTOM WIDTH
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) / 2)  # CUSTOM HEIGHT
 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
+# GPU detect
+device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+print(f"Using device: {device}")
+
 # CORE init
-line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), width, height)
+line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), width, height, device)
 homo_est = HomographyEstimator(width, height)
-ball_detector = BallDetector("models/football_best.pt")
+ball_detector = BallDetector("models/football_best.pt", device)
 ball_tracker = BallTracker()
-player_tracker = PlayerTracker(FOOTBALL_MODEL_PATH)
+player_tracker = PlayerTracker(FOOTBALL_MODEL_PATH, device)
 
 def has_display():
     if sys.platform == 'darwin' or sys.platform == 'win32':

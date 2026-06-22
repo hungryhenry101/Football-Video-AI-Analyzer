@@ -17,10 +17,11 @@ CLASS_COLORS = {
 }
 
 class PlayerTracker:
-    def __init__(self, model_path, tracker_config="botsort.yaml", conf_thres=0.2):
+    def __init__(self, model_path, device, tracker_config="botsort.yaml", conf_thres=0.2):
         self.model = YOLO(model_path)
         self.tracker_config = tracker_config
         self.conf_thres = conf_thres
+        self.device = device
 
     def update(self, frame):
         results = self.model.track(
@@ -28,6 +29,7 @@ class PlayerTracker:
             persist=True,
             conf=self.conf_thres,
             tracker=self.tracker_config,
+            device=self.device,
         )
 
         objs = []

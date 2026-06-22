@@ -57,6 +57,8 @@
 
 ![project plan](docs/project_plan.jpg)
 
+更详细的问题列表位于 [problems.md](docs/problems.md)
+
 - [ ] 自动生成守门员处理球集锦
 - [ ] 威胁度评分（结合位置、球速、对方球员密度等特征）
 - [ ] 守门员姿态分析、运动速度轨迹分析

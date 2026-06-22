@@ -2,18 +2,22 @@ import os
 os.chdir("../")
 
 import cv2
+import torch
 from core.ball_tracker import BallDetector, BallTracker
 from core.pitch_detection.line_det import LineDetector
 from core.pitch_detection.homography_estimator import HomographyEstimator
 
 
 def main():
-    ball_detector = BallDetector("models/football_best.pt")
-    tracker = BallTracker()
     vid = cv2.VideoCapture("input_vids/test2.mp4")
-
     width, height = 735, 404
-    line_detection = LineDetector(".", width, height)
+
+    device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    ball_detector = BallDetector("models/football_best.pt", device)
+    tracker = BallTracker()
+
+    line_detection = LineDetector(".", width, height, device)
     homo_est = HomographyEstimator(width, height)
 
     # Create windows once and lock positions so they don't move

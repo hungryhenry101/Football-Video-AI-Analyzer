@@ -2,12 +2,15 @@ import os
 os.chdir("../")
 
 import cv2
+import torch
 from core.player_tracker import PlayerTracker
 from core.pitch_detection.homography_estimator import HomographyEstimator
 from core.pitch_detection.line_det import LineDetector
 
 def main():
-    tracker = PlayerTracker("./models/football_best.pt")
+    device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    tracker = PlayerTracker("./models/football_best.pt", device)
     cap = cv2.VideoCapture("input_vids/test2.mp4")
     width, height = 735, 404
     homo_est = HomographyEstimator(width, height)

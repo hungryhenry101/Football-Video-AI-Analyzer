@@ -28,6 +28,7 @@ By this project I have learnt:
  - Mahalanobis vs Euclidean distance: The M take correlations and different unit into account while calculating the distance
  - Homography: transform lines to lines
  - Affine Trans.: Homography while preserving parallelism 
+ - Hough Trans.: 
 
 ### Ball Tracking
  - Matrices Multiplication: transform a point from one coords sys to another
@@ -35,6 +36,5 @@ By this project I have learnt:
  - Kalman Filter: to predict the real state of a detection and to adjust the weight automatically.
  - Chi-Square: ----!!!TODO!!!----
  - optical-flow: ----!!!TODO!!!---
- - Hough Transform: ----!!!TODO!!!---
  - tracking methods: ByteTrack / Bot-SORT etc. ----!!!TODO!!!---
  - Bayes: -----!!TODO!!!---

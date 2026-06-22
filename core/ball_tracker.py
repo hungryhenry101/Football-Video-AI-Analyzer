@@ -2,12 +2,12 @@ import numpy as np
 from ultralytics import YOLO
 from filterpy.kalman import KalmanFilter
 from scipy.stats import chi2
-from .pitch_detection.soccerpitch import SoccerPitch
 
 
 class BallDetector:
-    def __init__(self, model_path):
+    def __init__(self, model_path, device):
         self.model = YOLO(model_path)
+        self.device = device
 
     def detect(self, frame):
         detections = self.model(
@@ -15,7 +15,8 @@ class BallDetector:
             conf=0.15,
             iou=0.45,
             imgsz=960,
-            classes = [0]
+            classes=[0],
+            device=self.device,
         )
         return detections
 
@@ -38,14 +39,11 @@ class BallDetector:
 
 
 class BallTracker:
-    def __init__(self):
-        soccer_pitch = SoccerPitch()
-        self.penalty_mark_l = soccer_pitch.left_penalty_mark
-        self.penalty_mark_r = soccer_pitch.right_penalty_mark
-
+    def __init__(self, chi2_thres=0.9):
         self.kf = KalmanFilter(dim_x=4, dim_z=2)
 
-        # [x, y, vx, vy], dt = 1 frame
+        # dt = 1 frame
+        # [x, y, vx, vy]
         # State Transition Matrix
         self.kf.F = np.array([
             [1, 0, 1, 0], # x_pred = 1*x_old + 0*y_old + 1*vx_old + 0*vy_old = x_old + vx_old
@@ -60,17 +58,17 @@ class BallTracker:
             [0, 1, 0, 0]  # Zy
         ], np.float32)
 
-        self.kf.Q = np.eye(4) * 1.0  # process noise
-        self.kf.R = np.eye(2) * 9.0  # measurement noise
+        self.kf.Q = np.eye(4) * 8.0  # process noise
+        self.kf.R = np.eye(2) * 5.0  # measurement noise
 
         # gating threshold (90% confidence for chi^2 with df=2)
-        self.gate_threshold = chi2.ppf(0.9, df=2)
+        self.gate_threshold = chi2.ppf(chi2_thres, df=2)
 
         self.initialized = False
 
     def initialize(self, x, y):
-        self.kf.x = np.array([[x],[y],[0],[0]], dtype=np.float32)
-        self.kf.P = np.eye(4, dtype=np.float32) * 10.
+        self.kf.x = np.array([[x],[y],[0],[0]], dtype=np.float32)  # Current State
+        self.kf.P = np.eye(4, dtype=np.float32) * 10.  # Error Covariance
         self.initialized = True
 
     def process_frame(self, candidates):
