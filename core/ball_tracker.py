@@ -24,18 +24,18 @@ class BallDetector:
     def project_to_pitch(self, detections, H):
         if H is None or len(detections) == 0:
             return []
-        # project raw ball to BEV pitch ball using Homography
-        bev_balls = []
+        # project raw ball to hg BEV using Homography
+        hg_bev_balls = []
         result = detections[0]
         boxes = result.boxes.xyxy.cpu().numpy()
         for box in boxes:
             x1, y1, x2, y2 = box
             cx = (x1 + x2) / 2
             cy = (y1 + y2) / 2
-            p_homo = np.array([cx, cy, 1.0])
-            p_bev = H @ p_homo
-            bev_balls.append(p_bev)
-        return bev_balls
+            p_hg = np.array([cx, cy, 1.0])
+            p_hg_bev = H @ p_hg
+            hg_bev_balls.append(p_hg_bev)
+        return hg_bev_balls
 
 
 class BallTracker:

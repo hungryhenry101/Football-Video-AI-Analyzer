@@ -72,7 +72,7 @@ class HomographyEstimator:
         for name, point in self.intersections.items():
             if point is not None:
                 src.append(point)
-                # 将物理坐标（以中心为原点）转换为 BEV 画布像素坐标
+                # 将物理坐标（以中心为原点）转换为 hg BEV 画布像素坐标
                 phys_pt = self.soccer_pitch.point_dict[name]
                 dst.append(phys_pt)
                 
@@ -93,20 +93,20 @@ class HomographyEstimator:
         # 获取球场所有线条的离散点
         field_polylines = self.soccer_pitch.sample_field_points()
         for name, polyline in field_polylines.items():
-            pts_bev = []
-            for pt_phys in polyline:
-                pts_bev.append([pt_phys[0], pt_phys[1]])
+            hg_bev_pts = []
+            for hg_bev_pt in polyline:
+                hg_bev_pts.append([hg_bev_pt[0], hg_bev_pt[1]])
 
-            if not pts_bev:
+            if not hg_bev_pts:
                 continue
 
-            pts_bev = np.array(pts_bev, dtype=np.float32).reshape(-1, 1, 2)
-            # 透视变换：从 BEV 映射回原图
-            pts_img = cv2.perspectiveTransform(pts_bev, H_inv)
+            hg_bev_pts = np.array(hg_bev_pts, dtype=np.float32).reshape(-1, 1, 2)
+            # 从 BEV 映射回原图
+            pts_vid = cv2.perspectiveTransform(hg_bev_pts, H_inv)
 
-            for i in range(len(pts_img) - 1):
-                p1 = tuple(pts_img[i][0].astype(int))
-                p2 = tuple(pts_img[i + 1][0].astype(int))
+            for i in range(len(pts_vid) - 1):
+                p1 = tuple(pts_vid[i][0].astype(int))
+                p2 = tuple(pts_vid[i + 1][0].astype(int))
                 # 过滤掉变换后可能出现的异常坐标点
                 if abs(p1[0]) > 1e4 or abs(p1[1]) > 1e4 or abs(p2[0]) > 1e4 or abs(p2[1]) > 1e4:
                     continue
@@ -148,7 +148,7 @@ class HomographyEstimator:
         return abs(cross_product) < tolerance
 
     def _get_bev_transform(self, scale=10.0):
-        """返回从物理坐标（米，原点在中心）到 BEV 像素坐标的变换矩阵 T。
+        """返回从 Homogenous BEV 坐标（米，原点在中心）到 out BEV 像素坐标的变换矩阵 T。
 
         T = [[scale, 0, tx],
              [0, scale, ty],
@@ -165,7 +165,7 @@ class HomographyEstimator:
                          [0, 0, 1]], dtype=np.float32)
 
     def warp(self, img):
-        """生成俯视图BEV Bird's Eye View"""
+        """生成BEV Bird's Eye View"""
         if self.H is None:
             return img
 
@@ -178,20 +178,20 @@ class HomographyEstimator:
 
         return cv2.warpPerspective(img, H_bev, (out_w, out_h))
 
-    def warp_points(self, points, scale=10.0):
-        """将物理坐标点（project_to_pitch 的输出，齐次坐标 [x, y, w]）转换为 BEV 像素坐标。
+    def warp_points(self, hg_points, scale=10.0):
+        """将齐次坐标点（project_to_pitch 的输出，单位为m）转换为 out BEV 像素坐标。
 
-        :param points: 列表，每个元素是 (x, y, w) 齐次坐标
-        :param scale: px/m，必须与 warp() 中的 scale 一致
-        :return: [(x_bev, y_bev), ...] BEV 像素坐标列表
+        :param points: 齐次坐标列表，元素是 (x, y, w)
+        :param scale: px/m，与 warp() 中的 scale 一致
+        :return: [(x_bev, y_bev), ...] out BEV 像素坐标列表
         """
-        if not points:
+        if not hg_points:
             return []
 
         T = self._get_bev_transform(scale)
-        bev_points = []
-        for pt in points:
+        out_bev_points = []
+        for pt in hg_points:
             p = T @ pt[:3]
             p = p / p[2]  # 归一化齐次坐标
-            bev_points.append((int(p[0]), int(p[1])))
-        return bev_points
+            out_bev_points.append((int(p[0]), int(p[1])))
+        return out_bev_points

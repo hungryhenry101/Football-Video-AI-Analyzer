@@ -21,10 +21,7 @@
    - 用 Kalman Filter 代替 YOLO 自带跟踪器
    - (unimplemented) 排除总在球员脚边的检测，以及固定不动且在点球点附近的检测
 
-4. 球快速移动时KF跟不上:
-   - 不知道
-
-5. 性能极慢（ ~0.5 frame / s):
+4. 性能极慢（ ~0.5 frame / s): (未有效解决)
    - 检测 GPU 设备加速
    - 将原有算法 (line_det.py 每次都重新扫描整张图片并进行 random point mean shift) 替换为 cv2 内置 C++ 算法
 
@@ -37,3 +34,7 @@
 3. 场地检测不稳定：(目前多加了一些交点信息缓解问题，但并未从根本上解决)
    - 原因：使用 CoM shifting 进行线拟合
    - 计划使用 Hough 代替模型检测+CoM shift
+4. 球快速移动时KF跟不上:
+   - dt根据fps和其他因素调整；
+   - 增加3个状态：Lost, Visible, Occluded
+5. 场地识别镜像问题

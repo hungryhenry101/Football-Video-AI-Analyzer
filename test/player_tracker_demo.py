@@ -14,7 +14,7 @@ def main():
     cap = cv2.VideoCapture("input_vids/test2.mp4")
     width, height = 735, 404
     homo_est = HomographyEstimator(width, height)
-    line_detector = LineDetector(".", width, height)
+    line_detector = LineDetector(".", width, height, device)
     while True:
         ret, frame = cap.read()
         if not ret:

@@ -26,7 +26,7 @@ print(f"Using device: {device}")
 # CORE init
 line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), width, height, device)
 homo_est = HomographyEstimator(width, height)
-ball_detector = BallDetector("models/football_best.pt", device)
+ball_detector = BallDetector(FOOTBALL_MODEL_PATH, device)
 ball_tracker = BallTracker()
 player_tracker = PlayerTracker(FOOTBALL_MODEL_PATH, device)
 

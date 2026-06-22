@@ -22,7 +22,7 @@ def main():
 
     # Create windows once and lock positions so they don't move
     cv2.moveWindow("frame", 50, 50)
-    cv2.moveWindow("bev_img", 50 + width + 20, 50)
+    cv2.moveWindow("out bev", 50 + width + 20, 50)
 
     while True:
         ret, frame = vid.read()
@@ -60,7 +60,7 @@ def main():
             cv2.circle(bev_img, p_b, 5, (0, 0, 255), -1) #red
 
         cv2.imshow("frame", frame)
-        cv2.imshow("bev_img", bev_img)
+        cv2.imshow("out bev", bev_img)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 

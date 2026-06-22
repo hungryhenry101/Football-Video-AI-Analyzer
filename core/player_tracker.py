@@ -53,13 +53,13 @@ class PlayerTracker:
         if tracked_objects is None or H is None:
             return []
         players_xy = self.get_player_centers(tracked_objects)
-        bev_players = []
+        out_bev_players = []
         for xy in players_xy.values():
-            homo_player = np.array([xy[0], xy[1], 1])
-            player_bev = H @ homo_player
-            player_bev = player_bev / player_bev[2]
-            bev_players.append(player_bev)
-        return bev_players
+            hg_player = np.array([xy[0], xy[1], 1])
+            hg_bev_player = H @ hg_player
+            out_bev_player = hg_bev_player / hg_bev_player[2]
+            out_bev_players.append(out_bev_player)
+        return out_bev_players
 
     def get_player_centers(self, tracked_objects):
         """get bottom-center points (for homography projection)"""
