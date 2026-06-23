@@ -24,18 +24,22 @@ class BallDetector:
     def project_to_pitch(self, detections, H):
         if H is None or len(detections) == 0:
             return []
-        # project raw ball to hg BEV using Homography
-        hg_bev_balls = []
+        # project raw ball to hg BEV (meters) using Homography
         result = detections[0]
         boxes = result.boxes.xyxy.cpu().numpy()
-        for box in boxes:
-            x1, y1, x2, y2 = box
-            cx = (x1 + x2) / 2
-            cy = (y1 + y2) / 2
-            p_hg = np.array([cx, cy, 1.0])
-            p_hg_bev = H @ p_hg
-            hg_bev_balls.append(p_hg_bev)
-        return hg_bev_balls
+        if len(boxes) == 0:
+            return []
+
+        # 向量化：一次批量矩阵乘法完成所有框的投影，避免 Python 循环
+        cx = (boxes[:, 0] + boxes[:, 2]) / 2
+        cy = (boxes[:, 1] + boxes[:, 3]) / 2
+        ones = np.ones(len(boxes), dtype=np.float32)
+        pts = np.column_stack([cx, cy, ones])  # N×3
+
+        hg_pts = (H @ pts.T).T  # N×3，单次矩阵乘法替代逐个循环
+        # 归一化齐次坐标 → (x_m, y_m) in meters
+        hg_pts = hg_pts / hg_pts[:, 2:3]
+        return [(float(p[0]), float(p[1])) for p in hg_pts]
 
 
 class BallTracker:
@@ -43,7 +47,7 @@ class BallTracker:
         self.kf = KalmanFilter(dim_x=4, dim_z=2)
 
         # dt = 1 frame
-        # [x, y, vx, vy]
+        # [x, y, vx, vy] in hg BEV (meters)
         # State Transition Matrix
         self.kf.F = np.array([
             [1, 0, 1, 0], # x_pred = 1*x_old + 0*y_old + 1*vx_old + 0*vy_old = x_old + vx_old
@@ -58,8 +62,9 @@ class BallTracker:
             [0, 1, 0, 0]  # Zy
         ], np.float32)
 
-        self.kf.Q = np.eye(4) * 8.0  # process noise
-        self.kf.R = np.eye(2) * 5.0  # measurement noise
+        # noise parameters in meter units
+        self.kf.Q = np.eye(4) * 0.08  # process noise
+        self.kf.R = np.eye(2) * 0.05  # measurement noise
 
         # gating threshold (90% confidence for chi^2 with df=2)
         self.gate_threshold = chi2.ppf(chi2_thres, df=2)
@@ -68,7 +73,7 @@ class BallTracker:
 
     def initialize(self, x, y):
         self.kf.x = np.array([[x],[y],[0],[0]], dtype=np.float32)  # Current State
-        self.kf.P = np.eye(4, dtype=np.float32) * 10.  # Error Covariance
+        self.kf.P = np.eye(4, dtype=np.float32) * 0.1  # Error Covariance
         self.initialized = True
 
     def process_frame(self, candidates):

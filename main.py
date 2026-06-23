@@ -70,10 +70,12 @@ for frame_idx in tqdm(range(total_frames)):
             print("no player detected")
 
         ball_candidates = ball_detector.project_to_pitch(ball_dets, homo_est.H)
-        ball_candidates = homo_est.warp_points(ball_candidates)
         prediction = ball_tracker.process_frame(ball_candidates)
         if prediction is not None:
-            cv2.circle(bev_canva, (int(prediction[0]), int(prediction[1])), 5, (0, 0, 255), -1)  # red
+            # convert prediction from hg_bev (m) to out_bev (px) for display
+            pred_out = homo_est.warp_points([(prediction[0], prediction[1], 1.0)])
+            if pred_out:
+                cv2.circle(bev_canva, (int(pred_out[0][0]), int(pred_out[0][1])), 5, (0, 0, 255), -1)  # red
         else:
             print("no ball candidates")
 

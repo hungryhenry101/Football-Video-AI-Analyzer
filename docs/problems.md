@@ -35,6 +35,5 @@
    - 原因：使用 CoM shifting 进行线拟合
    - 计划使用 Hough 代替模型检测+CoM shift
 4. 球快速移动时KF跟不上:
-   - dt根据fps和其他因素调整；
    - 增加3个状态：Lost, Visible, Occluded
 5. 场地识别镜像问题

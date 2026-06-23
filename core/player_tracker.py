@@ -34,10 +34,15 @@ class PlayerTracker:
 
         objs = []
         if results[0].boxes is not None and results[0].boxes.id is not None:
-            boxes_xyxy = results[0].boxes.xyxy.cpu().numpy()
-            ids = results[0].boxes.id.cpu().numpy().astype(int)
-            confs = results[0].boxes.conf.cpu().numpy()
-            clss = results[0].boxes.cls.cpu().numpy().astype(int)
+            # 一次性从 GPU 拉取所有检测结果，减少同步开销
+            boxes_xyxy, ids, confs, clss = [
+                t.cpu().numpy() for t in [
+                    results[0].boxes.xyxy, results[0].boxes.id,
+                    results[0].boxes.conf, results[0].boxes.cls
+                ]
+            ]
+            ids = ids.astype(int)
+            clss = clss.astype(int)
 
             for box, tid, conf, cls in zip(boxes_xyxy, ids, confs, clss):
                 objs.append({

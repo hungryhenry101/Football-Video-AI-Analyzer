@@ -189,9 +189,8 @@ class HomographyEstimator:
             return []
 
         T = self._get_bev_transform(scale)
-        out_bev_points = []
-        for pt in hg_points:
-            p = T @ pt[:3]
-            p = p / p[2]  # 归一化齐次坐标
-            out_bev_points.append((int(p[0]), int(p[1])))
-        return out_bev_points
+        # 矩阵乘法替代 Python 循环
+        pts = np.array([p[:3] for p in hg_points], dtype=np.float32).T  # 3×N
+        p = T @ pts  # 3×N
+        p = p / p[2]  # 归一化齐次坐标
+        return [(int(p[0, i]), int(p[1, i])) for i in range(p.shape[1])]

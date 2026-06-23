@@ -1,9 +1,9 @@
-# botsort.yaml
-tracker_type: botsort  # choices: [bytetrack, botsort]
+# botsort.yaml - for player tracking
+tracker_type: botsort  # options: [bytetrack, botsort]
 track_high_thresh: 0.3
 track_low_thresh: 0.05
 new_track_thresh: 0.4
-track_buffer: 60       # Increased buffer to handle longer occlusions in football
+track_buffer: 60       # Increased buffer to handle longer occlusions
 match_thresh: 0.8
 
 fuse_score: True # Combine detection confidence with track confidence

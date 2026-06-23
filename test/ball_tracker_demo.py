@@ -39,10 +39,11 @@ def main():
         if len(raw_balls) > 0:
             # KF
             candidates = ball_detector.project_to_pitch(raw_balls, homo_est.H)
-            candidates = homo_est.warp_points(candidates)
             pred = tracker.process_frame(candidates)
             if pred is not None:
-                cv2.circle(bev_img, (int(pred[0]), int(pred[1])), 5, (255, 0, 0), -1)  # blue
+                pred_out = homo_est.warp_points([(pred[0], pred[1], 1.0)])
+                if pred_out:
+                    cv2.circle(bev_img, (int(pred_out[0][0]), int(pred_out[0][1])), 5, (255, 0, 0), -1)  # blue
             else:
                 print("no candidates")
 
@@ -53,9 +54,9 @@ def main():
                 x1, y1, x2, y2 = map(int, box)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2) # green
 
-        # all candidates
+        # all candidates (hg_bev → out_bev for display)
         p_balls = ball_detector.project_to_pitch(raw_balls, homo_est.H)
-        p_balls_bev = homo_est.warp_points(p_balls)
+        p_balls_bev = homo_est.warp_points([(x, y, 1.0) for x, y in p_balls])
         for p_b in p_balls_bev:
             cv2.circle(bev_img, p_b, 5, (0, 0, 255), -1) #red
 
