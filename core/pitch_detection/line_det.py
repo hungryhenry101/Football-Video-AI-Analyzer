@@ -54,7 +54,7 @@ class SegmentationNetwork:
 
         with torch.no_grad():
             result = self.model(img)
-        # GPU 上做 argmax（避免传输 29 通道 float32 → CPU，只传 1 通道 uint8）
+        # GPU 上做 argmax（避免传输 29 通道 float32 to CPU，只传 1 通道 uint8）
         output = torch.argmax(result['out'][0], dim=0).to(torch.uint8).cpu().numpy() # argmax along the class dimension to get the most likely class for each pixel
 
         return output

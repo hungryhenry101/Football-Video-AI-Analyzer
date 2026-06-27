@@ -20,7 +20,6 @@ class BallDetector:
         )
         return detections
 
-
     def project_to_pitch(self, detections, H):
         if H is None or len(detections) == 0:
             return []
@@ -30,30 +29,33 @@ class BallDetector:
         if len(boxes) == 0:
             return []
 
-        # 向量化：一次批量矩阵乘法完成所有框的投影，避免 Python 循环
+        # 向量化：一次批量矩阵乘法完成所有框的投影，替代循环
         cx = (boxes[:, 0] + boxes[:, 2]) / 2
         cy = (boxes[:, 1] + boxes[:, 3]) / 2
         ones = np.ones(len(boxes), dtype=np.float32)
         pts = np.column_stack([cx, cy, ones])  # N×3
 
         hg_pts = (H @ pts.T).T  # N×3，单次矩阵乘法替代逐个循环
-        # 归一化齐次坐标 → (x_m, y_m) in meters
+        # normalization
         hg_pts = hg_pts / hg_pts[:, 2:3]
         return [(float(p[0]), float(p[1])) for p in hg_pts]
 
 
 class BallTracker:
-    def __init__(self, chi2_thres=0.9):
+    def __init__(self, fps, chi2_thres=0.95):
+        if fps == 0: return
+        self.fps = fps
+        self.dt = 1.0 / self.fps
         self.kf = KalmanFilter(dim_x=4, dim_z=2)
 
-        # dt = 1 frame
-        # [x, y, vx, vy] in hg BEV (meters)
+        # [x, y, vx, vy] in hg BEV (meters, m/s)
         # State Transition Matrix
+        dt = self.dt
         self.kf.F = np.array([
-            [1, 0, 1, 0], # x_pred = 1*x_old + 0*y_old + 1*vx_old + 0*vy_old = x_old + vx_old
-            [0, 1, 0, 1], # y_pred
-            [0, 0, 1, 0], # vx_pred
-            [0, 0, 0, 1]  # vy_pred
+            [1, 0, dt, 0], # x_pred = x_old + dt * vx_old
+            [0, 1, 0, dt], # y_pred = y_old + dt * vy_old
+            [0, 0, 1, 0],  # vx_pred = vx_old
+            [0, 0, 0, 1]   # vy_pred = vy_old
         ], np.float32)
 
         # Measurement
@@ -63,10 +65,10 @@ class BallTracker:
         ], np.float32)
 
         # noise parameters in meter units
-        self.kf.Q = np.eye(4) * 0.08  # process noise
-        self.kf.R = np.eye(2) * 0.05  # measurement noise
+        self.kf.Q = np.eye(4) * 0.2  # process noise
+        self.kf.R = np.eye(2) * 0.1  # measurement noise
 
-        # gating threshold (90% confidence for chi^2 with df=2)
+        # gating threshold
         self.gate_threshold = chi2.ppf(chi2_thres, df=2)
 
         self.initialized = False

@@ -10,12 +10,13 @@ from core.pitch_detection.homography_estimator import HomographyEstimator
 
 def main():
     vid = cv2.VideoCapture("input_vids/test2.mp4")
+    fps = vid.get(cv2.CAP_PROP_FPS)
     width, height = 735, 404
 
     device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
     ball_detector = BallDetector("models/football_best.pt", device)
-    tracker = BallTracker()
+    tracker = BallTracker(fps=fps)
 
     line_detection = LineDetector(".", width, height, device)
     homo_est = HomographyEstimator(width, height)

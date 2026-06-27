@@ -27,7 +27,7 @@ print(f"Using device: {device}")
 line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), width, height, device)
 homo_est = HomographyEstimator(width, height)
 ball_detector = BallDetector(FOOTBALL_MODEL_PATH, device)
-ball_tracker = BallTracker()
+ball_tracker = BallTracker(fps=fps)
 player_tracker = PlayerTracker(FOOTBALL_MODEL_PATH, device)
 
 def has_display():
