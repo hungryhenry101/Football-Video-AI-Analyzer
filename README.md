@@ -53,6 +53,21 @@
 
 ---
 
+## 如何启动？
+
+> 测试比赛视频已内置于 `input_vids/` 中
+
+1. 安装依赖：
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. 将模型文件放入 `models/`, 将比赛视频放入 `input_vids/` 
+3. 在 main.py 中修改 `model` 和 `VIDEO_PATH` 为你的文件路径
+4. 运行 main.py，弹出 cam视角、bev视角 窗口
+
+---
+
 ## TODO
 
 ![project plan](docs/project_plan.jpg)
@@ -66,33 +81,10 @@
 
 ---
 
-## 使用的技术与依赖
+## 参考
 
-- 检测模型：[football-players-detection](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbcYOLOv11m)
-- 跟踪器：ByteTrack（配置文件 `bytetrack.yaml`）
-- 可视化：OpenCV
-- 语言：Python 3.10
-
-安装依赖：
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## 如何启动？
-
-> 模型文件 [football-players-detection](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbcYOLOv11m)，自行训练或在 [蓝奏云](https://wwbcc.lanzoup.com/iDH023f1y7zg) 下载模型
-> 测试比赛视频已内置于 `input_vids/` 中
-
-1. 将模型文件放入 `models/`, 将比赛视频放入 `input_vids/` 
-2. 在 main.py 中修改 `model` 和 `VIDEO_PATH` 为你的文件路径
-3. 运行 main.py
-
-4. 处理完成后：
-   - 跟踪日志会保存到 `output/track_log.csv`
-   - 可运行 `draw_2d.py` 查看可视化结果，会保存至 `output/track_trajectories.png`
+### 球场检测：
+- SoccerNet Calibration: https://github.com/SoccerNet/sn-calibration
 
 ---
 

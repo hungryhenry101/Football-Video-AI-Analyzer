@@ -9,8 +9,8 @@ from core.pitch_detection.homography_estimator import HomographyEstimator
 from core.player_tracker import PlayerTracker
 from core.ball_tracker import BallTracker, BallDetector
 
-FOOTBALL_MODEL_PATH = "models/football_best.pt"  # YOUR MODEL PATH
-VIDEO_PATH = "./input_vids/test2.mp4" # YOUR VIDEO PATH
+FOOTBALL_MODEL_PATH = "weights/football_best.pt"  # YOUR MODEL PATH
+VIDEO_PATH = "input_vids/test2.mp4" # YOUR VIDEO PATH
 
 # VIDEO PROCESSING
 cap = cv2.VideoCapture(VIDEO_PATH)

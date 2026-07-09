@@ -53,6 +53,20 @@ This project is currently a research/learning prototype designed to track player
 
 ---
 
+## Quick Start
+
+> The test match video is included in `input_vids/`.
+
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Place the model file in `models/` and the match video in `input_vids/`.
+3. Update the `model` and `VIDEO_PATH` in `main.py` with your file paths.
+4. Run `main.py`: View of camera and BEV will show up
+---
+
 ## TODO
 
 ![project plan](docs/project_plan.jpg)
@@ -66,35 +80,10 @@ Detailed problem list here:  [problems.md](docs/problems.md)
 
 ---
 
-## Tech Stack and Dependencies
+## References
 
-- Detection Model: [football-players-detection](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbcYOLOv11m) (YOLOv11m)
-- Tracker: ByteTrack (configuration file `bytetrack.yaml`)
-- Visualization: OpenCV
-- Language: Python 3.10
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## Quick Start
-
-> Note: Download the model file [football-players-detection](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbcYOLOv11m), train your own, or download it from [Lanzou Cloud](https://wwbcc.lanzoup.com/iDH023f1y7zg).
-> The test match video is included in `input_vids/`.
-
-1. Place the model file in `models/` and the match video in `input_vids/`.
-2. Update the `model` and `VIDEO_PATH` in `main.py` with your file paths.
-3. Run `main.py`:
-   ```bash
-   python main.py
-   ```
-4. After processing:
-   - Tracking logs are saved to `output/track_log.csv`.
-   - Run `draw_2d.py` to view visualized trajectories, which will be saved as `output/track_trajectories.png`.
+### Pitch Detection
+- SoccerNet Calibration: https://github.com/SoccerNet/sn-calibration
 
 ---
 

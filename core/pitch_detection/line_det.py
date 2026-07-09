@@ -8,9 +8,9 @@ import cv2
 from torchvision.models.segmentation import deeplabv3_resnet50
 from .soccerpitch import SoccerPitch
 
-MEAN_PATH = 'models/pitch_seg_npy/mean.npy'
-STD_PATH = 'models/pitch_seg_npy/std.npy'
-MODEL_PATH = 'models/soccer_pitch_segmentation.pth'
+MEAN_PATH = 'weights/pitch_seg_npy/mean.npy'
+STD_PATH = 'weights/pitch_seg_npy/std.npy'
+MODEL_PATH = 'weights/soccer_pitch_segmentation.pth'
 
 class SegmentationNetwork:
     def __init__(self, project_dir, width, height, device):

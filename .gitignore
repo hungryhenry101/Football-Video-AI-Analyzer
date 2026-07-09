@@ -10,7 +10,7 @@ __pycache__/
 *.pth
 output/
 CLAUDE.md
+weights/*
 
 official_demo
-core/pitch_detection/point_det.py
 sn-tracking
