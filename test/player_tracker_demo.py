@@ -4,17 +4,26 @@ os.chdir("../")
 import cv2
 import torch
 from core.player_tracker import PlayerTracker
-from core.pitch_detection.homography_estimator import HomographyEstimator
-from core.pitch_detection.line_det import LineDetector
+from core.pnl.pnl_calib import PnLCalib
+from core.pnl.projection_utils import pixel_to_ground
+
 
 def main():
     device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
-    tracker = PlayerTracker("./models/football_best.pt", device)
+    tracker = PlayerTracker("./weights/football_best.pt", device)
     cap = cv2.VideoCapture("input_vids/test2.mp4")
     width, height = 735, 404
-    homo_est = HomographyEstimator(width, height)
-    line_detector = LineDetector(".", width, height, device)
+
+    pnl_calib = PnLCalib(
+        weights_kp="weights/SV_kp",
+        weights_line="weights/SV_lines",
+        device=device,
+        width=width,
+        height=height
+    )
+    bev_template = pnl_calib.create_bev_template()
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -24,15 +33,19 @@ def main():
 
         result = tracker.update(canvas)
 
-        l_detection = line_detector.detect(frame)
-        homo_est.estimate(l_detection)
-        bev_canva = homo_est.warp(canvas)
-        if homo_est.H is not None:
-            bev_players = tracker.project_to_pitch(result, homo_est.H)
-            players = homo_est.warp_points(bev_players)
-            for player in players:
-                cv2.circle(bev_canva, (int(player[0]), int(player[1])), 5, (255, 0, 0), -1)
-            cv2.imshow("bev", bev_canva)
+        calib = pnl_calib.estimate(frame)
+        if calib is None:
+            continue
+        K, R, t = calib["K"], calib["R"], calib["t"]
+
+        bev_canva = bev_template.copy()
+        player_centers = tracker.get_player_centers(result)
+        for tid, (cx, cy) in player_centers.items():
+            pt = pixel_to_ground(cx, cy, K, R, t)
+            if pt is not None:
+                px, py = pnl_calib.world_to_bev_px(pt[0], pt[1])
+                cv2.circle(bev_canva, (px, py), 5, (255, 0, 0), -1)
+        cv2.imshow("bev", bev_canva)
 
         tracker.draw_tracks(canvas, result)
         cv2.imshow("frame", canvas)
@@ -41,6 +54,7 @@ def main():
             break
     cap.release()
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
