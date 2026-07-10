@@ -57,14 +57,16 @@
 
 > 测试比赛视频已内置于 `input_vids/` 中
 
+1. 训练模型：从 [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
+下载数据集并训练（演示使用的是 YOLO11）。训练好的权重文件放入 `weights` 文件夹，并在 `main.py` 中更改权重文件的路径
 1. 安装依赖：
    ```bash
    pip install -r requirements.txt
    ```
 
-2. 将模型文件放入 `models/`, 将比赛视频放入 `input_vids/` 
-3. 在 main.py 中修改 `model` 和 `VIDEO_PATH` 为你的文件路径
-4. 运行 main.py，弹出 cam视角、bev视角 窗口
+1. 将模型文件放入 `models/`, 将比赛视频放入 `input_vids/` 
+1. 在 main.py 中修改 `model` 和 `VIDEO_PATH` 为你的文件路径
+1. 运行 main.py，弹出 cam视角、bev视角 窗口
 
 ---
 

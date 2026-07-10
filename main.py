@@ -9,7 +9,7 @@ from core.pitch_detection.homography_estimator import HomographyEstimator
 from core.player_tracker import PlayerTracker
 from core.ball_tracker import BallTracker, BallDetector
 
-FOOTBALL_MODEL_PATH = "weights/football_best.pt"  # YOUR MODEL PATH
+FOOTBALL_WEIGHT_FILE = "weights/football_best.pt"  # YOUR WEIGHT FILE
 VIDEO_PATH = "input_vids/test2.mp4" # YOUR VIDEO PATH
 
 # VIDEO PROCESSING
@@ -26,9 +26,9 @@ print(f"Using device: {device}")
 # CORE init
 line_detector = LineDetector(os.path.dirname(os.path.abspath(__file__)), width, height, device)
 homo_est = HomographyEstimator(width, height)
-ball_detector = BallDetector(FOOTBALL_MODEL_PATH, device)
+ball_detector = BallDetector(FOOTBALL_WEIGHT_FILE, device)
 ball_tracker = BallTracker(fps=fps)
-player_tracker = PlayerTracker(FOOTBALL_MODEL_PATH, device)
+player_tracker = PlayerTracker(FOOTBALL_WEIGHT_FILE, device)
 
 def has_display():
     if sys.platform == 'darwin' or sys.platform == 'win32':

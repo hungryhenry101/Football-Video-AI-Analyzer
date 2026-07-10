@@ -57,14 +57,16 @@ This project is currently a research/learning prototype designed to track player
 
 > The test match video is included in `input_vids/`.
 
+1. Model Training：Download dataset from [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
+and train it (YOLO11 is used in demonstration). Put the trained weights file to `weights` folder, and edit the path of weight file in `main.py`
 1. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-2. Place the model file in `models/` and the match video in `input_vids/`.
-3. Update the `model` and `VIDEO_PATH` in `main.py` with your file paths.
-4. Run `main.py`: View of camera and BEV will show up
+1. Place the model file in `models/` and the match video in `input_vids/`.
+1. Update the `model` and `VIDEO_PATH` in `main.py` with your file paths.
+1. Run `main.py`: View of camera and BEV will show up
 ---
 
 ## TODO
