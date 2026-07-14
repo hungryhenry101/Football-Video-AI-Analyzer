@@ -2,17 +2,14 @@
 PnL Calibrator
 
 Provides:
-- Full 3×4 projection matrix P (for 3D ray casting / aerial ball tracking)
+- Full 3×4 projection matrix P for 3D
 - Camera intrinsics K, rotation R, position t
-- BEV warp image and point projections
 
 Usage:
     pnl = PnLCalib("weights/SV_kp", "weights/SV_lines", device="cuda")
     calib = pnl.estimate(frame)  # dict with P, K, R, t, kp_dict, lines_dict
-    bev = pnl.warp(frame)        # BEV image
 """
 
-import os
 import cv2
 import yaml
 import torch
@@ -23,7 +20,7 @@ from PIL import Image
 
 from .model.cls_hrnet import get_cls_net
 from .model.cls_hrnet_l import get_cls_net as get_cls_net_l
-from .utils.utils_calib import FramebyFrameCalib, pan_tilt_roll_to_orientation
+from .utils.utils_calib import FramebyFrameCalib, line_world_coords_3D
 from .utils.utils_heatmap import (
     get_keypoints_from_heatmap_batch_maxpool,
     get_keypoints_from_heatmap_batch_maxpool_l,
@@ -179,23 +176,14 @@ class PnLCalib:
         return self._last_result
 
     def draw_pitch_lines(self, img, color=(0, 255, 0), thickness=2):
-        """Project standard pitch lines back onto the image using P matrix.
+        """Project standard pitch lines back onto the original frame using P matrix."""
 
-        Args:
-            img: BGR image to draw on (modified in-place)
-            color: line color (BGR)
-            thickness: line thickness
-
-        Returns:
-            img with pitch lines drawn
-        """
         if self._last_result is None:
             return img
 
         P = self._last_result["P"]
 
         # Standard pitch line segments in 3D (from PnLCalib)
-        from .utils.utils_calib import line_world_coords_3D
 
         for line in line_world_coords_3D:
             w1, w2 = np.array(line[0]), np.array(line[1])

@@ -86,6 +86,12 @@ Detailed problem list here:  [problems.md](docs/problems.md)
 
 ### Pitch Detection
 - SoccerNet Calibration: https://github.com/SoccerNet/sn-calibration
+- PnLCalib: https://arxiv.org/abs/2404.08401
+
+### Data Processing & Analytics
+- SoccermaticsForPython: https://github.com/Friends-of-Tracking-Data-FoTD/SoccermaticsForPython
+- Friends of Tracking: https://www.youtube.com/@friendsoftracking755
+- wyscout: https://apidocs.wyscout.com?version=3
 
 ---
 

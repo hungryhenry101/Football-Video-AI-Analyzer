@@ -85,8 +85,14 @@
 
 ## 参考
 
-### 球场检测：
+### 球场检测
 - SoccerNet Calibration: https://github.com/SoccerNet/sn-calibration
+- PnLCalib: https://arxiv.org/abs/2404.08401
+
+### 数据处理与分析
+- SoccermaticsForPython: https://github.com/Friends-of-Tracking-Data-FoTD/SoccermaticsForPython
+- Friends of Tracking: https://www.youtube.com/@friendsoftracking755
+- wyscout: https://apidocs.wyscout.com?version=3
 
 ---
 
