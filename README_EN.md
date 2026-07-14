@@ -13,15 +13,14 @@ This project is currently a research/learning prototype designed to track player
 
 ## Features
 
-### I. Pitch Line Detection and Standard Pitch Fitting
+### I. Pitch Detection & Fitting
 
-`core/pitch_detection`
+`core/pnl`
 
-1. Uses a semantic segmentation model to detect and classify pitch lines (future plans include removing dependency on model-based classification, potentially using Hough Transform).
-![Pitch Detection](docs/pitch_det.png)
-
-2. Calculates the Homography based on predefined pitch line configurations to fit the standard pitch (and generates a Bird's Eye View).
-![Birds' Eye View](docs/bev.png)
+Using the architecture of [PnLCalib](https://arxiv.org/abs/2404.08401):
+1. Detect the keypoints with a KP model, then use a line detection model to assist with pitch fitting
+2. Calibrate the camera and optimise the result with FramebyFrameCalib
+![Pitch Detection](docs/pnl.png)
 
 ### II. Player Detection and Tracking
 

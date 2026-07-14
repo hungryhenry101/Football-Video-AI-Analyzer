@@ -13,15 +13,14 @@
 
 ## 功能
 
-### I. 白线识别与拟合标准球场
+### I. 球场识别与拟合
 
-`core/pitch_detection`
+`core/pnl`
 
-1. 使用 Segmentation Model 进行球场线识别及分类（后续计划不再依赖模型分类，可能尝试 Hough Transform）
-![Pitch Detection](docs/pitch_det.png)
-
-2. 根据预设的球场线信息，计算 Homography，拟合标准球场（顺便得出 Bird's Eye View）
-![Birds' Eye View](docs/bev.png)
+采用了 [PnLCalib](https://arxiv.org/abs/2404.08401) 的方法:
+1. 使用 keypoint 模型检测关键点并使用 line detection 模型辅助检测
+2. 使用 FramebyFrameCalib 进行相机标定和优化
+![Pitch Detection](docs/pnl.png)
 
 ### II. 球员识别跟踪
 

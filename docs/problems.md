@@ -21,7 +21,7 @@
    - (unimplemented) 排除总在球员脚边的检测，以及固定不动且在点球点附近的检测
 
 4. 性能极慢（ ~0.5 frame / s): (未达到预期)
-   - 检测 GPU 设备加速
+   - GPU 加速
    - 使用 PnL: Keypoint + Line Model
 
 
@@ -30,9 +30,11 @@
 1. 在光照差异大的情况下，球场识别不稳定
 2. 高空球处理（长传、传中...）
    - PnL 创建了3D坐标系，计划尝试在BallTracker中使用3D
-3. 场地检测不稳定：
+3. 场地检测不稳定，乱跳，导致后续KF和位置问题：
    - 计划使用 KF 或其他 temporal smoothing method
 4. 球快速移动时KF跟不上:
    - 增加3个状态：Lost, Visible, Occluded
 5. 场地识别镜像问题
 6. 低视角较近距离拍摄无法有效检测足球场
+7. PnL不使用边线信息
+8. use separated models for ball detection and player detection
