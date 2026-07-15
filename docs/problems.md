@@ -2,16 +2,15 @@
 
  *为以后写研究文档做准备*
 
-## 宏观问题：
+## 整体问题：
  - 我没有什么数学和cv基础。遇到新的概念或者术语或者方法需要一直搜。这样不仅会打乱我的思路，而且有的概念我看了也不太理解。看完也不会应用。
 
 ## 已解决：
 
-1. 在选点进行mask ui时，对于真正的ui识别速度慢；当镜头不移动时又会将观众席或广告牌给识别为ui: 
- 
+1. 会将观众席或广告牌给识别为ui:
    - ~~??使用深度学习的目标检测（依旧yolo)，使用roboflow上的公开数据集以及手动标注数据集进行模型训练??~~
-   - ~~??借鉴 soccer net??~~
-   - ✅使用球场关键点模型进行相机标定，而不用ui mask
+   - ~~??选点进行光流法??~~
+   - ✅使用球场模型进行相机标定，而不用ui mask
 
 2. ByteTrack跟人效果差：
    - 用 BoT-SORT
@@ -21,19 +20,21 @@
    - 用 Kalman Filter 代替 YOLO 自带跟踪器
    - (unimplemented) 排除总在球员脚边的检测，以及固定不动且在点球点附近的检测
 
-4. 性能极慢（ ~0.5 frame / s): (未有效解决)
-   - 检测 GPU 设备加速
-   - 将原有算法 (line_det.py 每次都重新扫描整张图片并进行 random point mean shift) 替换为 cv2 内置 C++ 算法
-
+4. 性能极慢（ ~0.5 frame / s): (未达到预期)
+   - GPU 加速
+   - 使用 PnL: Keypoint + Line Model
 
 
 ## 未解决：
 
 1. 在光照差异大的情况下，球场识别不稳定
 2. 高空球处理（长传、传中...）
-3. 场地检测不稳定：(目前多加了一些交点信息缓解问题，但并未从根本上解决)
-   - 原因：使用 CoM shifting 进行线拟合
-   - 计划使用 Hough 代替模型检测+CoM shift
+   - PnL 创建了3D坐标系，计划尝试在BallTracker中使用3D
+3. 场地检测不稳定，乱跳，导致后续KF和位置问题：
+   - 计划使用 KF 或其他 temporal smoothing method
 4. 球快速移动时KF跟不上:
    - 增加3个状态：Lost, Visible, Occluded
 5. 场地识别镜像问题
+6. 低视角较近距离拍摄无法有效检测足球场
+7. PnL不使用边线信息
+8. use separated models for ball detection and player detection

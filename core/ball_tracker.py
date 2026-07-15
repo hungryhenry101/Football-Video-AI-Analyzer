@@ -2,6 +2,7 @@ import numpy as np
 from ultralytics import YOLO
 from filterpy.kalman import KalmanFilter
 from scipy.stats import chi2
+from core.pnl.projection_utils import pixel_to_ground
 
 
 class BallDetector:
@@ -19,6 +20,32 @@ class BallDetector:
             device=self.device,
         )
         return detections
+
+    def get_ball_centers(self, detections):
+        if not detections:
+            return []
+        result = detections[0]
+        if result.boxes is None or len(result.boxes) == 0:
+            return []
+        boxes = result.boxes.xyxy.cpu().numpy()
+        centers = []
+        for box in boxes:
+            x1, y1, x2, y2 = box
+            cx = (x1 + x2) / 2
+            cy = (y1 + y2) / 2
+            w = x2 - x1
+            centers.append((float(cx), float(cy), float(w)))
+        return centers
+
+    def project_to_ground(self, detections, K, R, t):
+        """Project ball detections to ground plane (world meters) using PnL camera model."""
+        centers = self.get_ball_centers(detections)
+        ground_pts = []
+        for cx, cy, _ in centers:
+            pt = pixel_to_ground(cx, cy, K, R, t)
+            if pt is not None:
+                ground_pts.append((float(pt[0]), float(pt[1])))
+        return ground_pts
 
     def project_to_pitch(self, detections, H):
         if H is None or len(detections) == 0:
@@ -65,8 +92,8 @@ class BallTracker:
         ], np.float32)
 
         # noise parameters in meter units
-        self.kf.Q = np.eye(4) * 0.2  # process noise
-        self.kf.R = np.eye(2) * 0.1  # measurement noise
+        self.kf.Q = np.eye(4) * 0.25  # process noise
+        self.kf.R = np.eye(2) * 0.2  # measurement noise
 
         # gating threshold
         self.gate_threshold = chi2.ppf(chi2_thres, df=2)

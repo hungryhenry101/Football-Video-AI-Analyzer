@@ -1,0 +1,39 @@
+import os
+os.chdir("..")
+
+import cv2
+from core.pnl.pnl_calib import PnLCalib
+import torch
+
+if __name__ == '__main__':
+    PNL_KP_WEIGHTS = "weights/SV_kp"
+    PNL_LINE_WEIGHTS = "weights/SV_lines"
+    VIDEO_PATH = "input_vids/test2.mp4"
+    cap = cv2.VideoCapture(VIDEO_PATH)
+
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) / 2)
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) / 2)
+
+    device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+
+    pnl_calib = PnLCalib(
+        weights_kp=PNL_KP_WEIGHTS,
+        weights_line=PNL_LINE_WEIGHTS,
+        device=device,
+        width=width,
+        height=height
+    )
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.resize(frame, (width, height))
+        calib = pnl_calib.estimate(frame)
+        print(calib)
+        pnl_calib.draw_pitch_lines(frame, color=(0, 255, 0), thickness=2)
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+    cap.release()
