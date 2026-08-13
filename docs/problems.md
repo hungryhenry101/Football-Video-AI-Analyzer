@@ -23,6 +23,7 @@
 4. 性能极慢（ ~0.5 frame / s): (未达到预期)
    - GPU 加速
    - 使用 PnL: Keypoint + Line Model
+   - todo：只在预测区域内检测球，而非整个帧
 
 
 ## 未解决：
@@ -36,5 +37,4 @@
    - 增加3个状态：Lost, Visible, Occluded
 5. 场地识别镜像问题
 6. 低视角较近距离拍摄无法有效检测足球场
-7. PnL不使用边线信息
-8. use separated models for ball detection and player detection
+7. use separated models for ball detection and player detection

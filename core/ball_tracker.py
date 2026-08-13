@@ -47,27 +47,6 @@ class BallDetector:
                 ground_pts.append((float(pt[0]), float(pt[1])))
         return ground_pts
 
-    def project_to_pitch(self, detections, H):
-        if H is None or len(detections) == 0:
-            return []
-        # project raw ball to hg BEV (meters) using Homography
-        result = detections[0]
-        boxes = result.boxes.xyxy.cpu().numpy()
-        if len(boxes) == 0:
-            return []
-
-        # 向量化：一次批量矩阵乘法完成所有框的投影，替代循环
-        cx = (boxes[:, 0] + boxes[:, 2]) / 2
-        cy = (boxes[:, 1] + boxes[:, 3]) / 2
-        ones = np.ones(len(boxes), dtype=np.float32)
-        pts = np.column_stack([cx, cy, ones])  # N×3
-
-        hg_pts = (H @ pts.T).T  # N×3，单次矩阵乘法替代逐个循环
-        # normalization
-        hg_pts = hg_pts / hg_pts[:, 2:3]
-        return [(float(p[0]), float(p[1])) for p in hg_pts]
-
-
 class BallTracker:
     def __init__(self, fps, chi2_thres=0.95):
         if fps == 0: return
@@ -178,3 +157,9 @@ class BallTracker:
         if not self.initialized:
             return None
         return float(self.kf.x[0]), float(self.kf.x[1])
+
+    def get_velocity(self):
+        """Return Kalman filter velocity estimate (vx, vy) in m/s."""
+        if not self.initialized:
+            return None
+        return float(self.kf.x[2]), float(self.kf.x[3])

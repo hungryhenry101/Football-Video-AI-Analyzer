@@ -1,6 +1,7 @@
 from ultralytics import YOLO
 import cv2
 import numpy as np
+from core.pnl.projection_utils import pixel_to_ground
 
 CLASS_NAMES = {
     0: "ball",
@@ -54,16 +55,16 @@ class PlayerTracker:
 
         return objs
 
-    def project_to_pitch(self, tracked_objects, H):
-        if tracked_objects is None or H is None:
+    def project_to_pitch(self, tracked_objects, K, R, t):
+        if tracked_objects is None or K is None or R is None or t is None:
             return []
         players_xy = self.get_player_centers(tracked_objects)
         out_bev_players = []
-        for xy in players_xy.values():
-            hg_player = np.array([xy[0], xy[1], 1])
-            hg_bev_player = H @ hg_player
-            out_bev_player = hg_bev_player / hg_bev_player[2]
-            out_bev_players.append(out_bev_player)
+        for x, y in players_xy.values():
+            # full P instead of H
+            pt = pixel_to_ground(x, y, K, R, t)
+            if pt is not None:
+                out_bev_players.append(np.array([pt[0], pt[1], 1.0]))
         return out_bev_players
 
     def get_player_centers(self, tracked_objects):

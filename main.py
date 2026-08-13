@@ -52,6 +52,7 @@ if has_display():
 
 
 # MAIN LOOP
+last_calib = None
 for frame_idx in tqdm(range(total_frames)):
     ret, frame = cap.read()
     if not ret:
@@ -64,7 +65,12 @@ for frame_idx in tqdm(range(total_frames)):
     calib = pnl_calib.estimate(frame)
     if calib is None:
         tqdm.write("Failed to estimate calib")
-        continue
+        if last_calib is not None:
+            calib = last_calib
+        else:
+            continue
+    else:
+        last_calib = calib
     K = calib["K"]
     R = calib["R"]
     t = calib["t"]

@@ -2,7 +2,7 @@
 
 [简体中文](README.md) ｜ English
 
-This project is currently a research/learning prototype designed to track players and the ball in football match videos. It identifies goalkeepers, calculates threat levels, and aims to automatically generate goalkeeper highlight reels (not yet implemented).
+This project is currently a research/learning prototype designed to track players and the ball in football match videos, aiming to automatically generate goalkeeper highlight reels and analytics.
 
 <div align="center">
 <figure>
