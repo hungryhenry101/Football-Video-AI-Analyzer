@@ -79,6 +79,7 @@ class PnLCalib:
         # Calibration engine (instantiated per-frame)
         self.calib = None
         self._last_result = None
+        self._last_cam_params = None  # previous frame's cam_params, used to warm-start
 
         # Pitch geometry constants for BEV rendering
         self._pitch_length = 105.0
@@ -131,9 +132,10 @@ class PnLCalib:
             kp_dict[0], lines_dict[0], w=w, h=h, normalize=True
         )
 
-        # Run calibration
+        # Run calibration (warm-started from the previous frame's camera params)
         self.calib = FramebyFrameCalib(
-            iwidth=self.width, iheight=self.height, denormalize=True
+            iwidth=self.width, iheight=self.height, denormalize=True,
+            warm_start=self._last_cam_params,
         )
         self.calib.update(kp_dict, lines_dict)
 
@@ -147,6 +149,9 @@ class PnLCalib:
 
         cam_params = result["cam_params"]
         rep_err = result["rep_err"]
+
+        # Cache for next frame's warm-start
+        self._last_cam_params = cam_params
 
         # Extract camera components from params dict
         K = np.array([

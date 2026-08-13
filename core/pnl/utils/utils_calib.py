@@ -93,10 +93,11 @@ def pan_tilt_roll_to_orientation(pan, tilt, roll):
 
 
 class FramebyFrameCalib:
-    def __init__(self, iwidth=960, iheight=540, denormalize=False):
+    def __init__(self, iwidth=960, iheight=540, denormalize=False, warm_start=None):
         self.image_width = iwidth
         self.image_height = iheight
         self.denormalize = denormalize
+        self.warm_start = warm_start
         self.calibration = None
         self.principal_point = np.array([iwidth/2, iheight/2])
         self.position = None
@@ -361,6 +362,45 @@ class FramebyFrameCalib:
             return np.array(err).ravel()
 
 
+    def _warm_intrinsics(self):
+        """Previous frame's intrinsic matrix K as a warm-start guess (or None)."""
+        if self.warm_start is None:
+            return None
+        wp = self.warm_start
+        try:
+            mtx = np.array([
+                [wp["x_focal_length"], 0.0, wp["principal_point"][0]],
+                [0.0, wp["y_focal_length"], wp["principal_point"][1]],
+                [0.0, 0.0, 1.0],
+            ], dtype=np.float64)
+        except (KeyError, TypeError, IndexError):
+            return None
+        if np.isnan(mtx).any() or mtx[0, 0] <= 0 or mtx[1, 1] <= 0:
+            return None
+        return mtx
+
+    def _warm_extrinsics(self):
+        """Previous frame's pose (rvec, tvec) as a warm-start guess (or (None, None)).
+
+        The previous pose is stored in world-frame coordinates (rotation_matrix:
+        world->camera, position_meters: camera center in world). calibrateCamera's
+        single-view solve operates on world-frame correspondences, so we convert
+        directly: rvec = Rodrigues(R), tvec = -R @ position.
+        """
+        if self.warm_start is None:
+            return None, None
+        wp = self.warm_start
+        try:
+            R = np.array(wp["rotation_matrix"], dtype=np.float64)
+            pos = np.array(wp["position_meters"], dtype=np.float64).reshape(3)
+        except (KeyError, TypeError, ValueError):
+            return None, None
+        if R.shape != (3, 3) or np.isnan(R).any() or np.isnan(pos).any():
+            return None, None
+        rvec, _ = cv2.Rodrigues(R)
+        tvec = (-R @ pos).reshape(3, 1)
+        return rvec, tvec
+
     def get_cam_params(self, mode='full', use_ransac=0, refine=False, refine_w_lines=False):
         flags = cv2.CALIB_FIX_PRINCIPAL_POINT | cv2.CALIB_FIX_ASPECT_RATIO
         flags = flags | cv2.CALIB_FIX_TANGENT_DIST | \
@@ -387,14 +427,29 @@ class FramebyFrameCalib:
             )
 
         else:
-            mtx = cv2.initCameraMatrix2D(
-                self.obj_pts,
-                self.img_pts,
-                (self.image_width, self.image_height),
-                aspectRatio=1.0,
-            )
+            # Warm-start intrinsics from the previous frame's K when available;
+            # otherwise fall back to a fresh initCameraMatrix2D estimate.
+            warm_mtx = self._warm_intrinsics()
+            if warm_mtx is not None:
+                mtx = warm_mtx
+            else:
+                mtx = cv2.initCameraMatrix2D(
+                    self.obj_pts,
+                    self.img_pts,
+                    (self.image_width, self.image_height),
+                    aspectRatio=1.0,
+                )
             if not np.isnan(np.min(mtx)):
                 flags2 = flags | cv2.CALIB_USE_INTRINSIC_GUESS
+
+                # Warm-start extrinsics (rvec/tvec) from the previous frame's pose.
+                rvecs_in = None
+                tvecs_in = None
+                warm_rvec, warm_tvec = self._warm_extrinsics()
+                if warm_rvec is not None and warm_tvec is not None:
+                    flags2 |= cv2.CALIB_USE_EXTRINSIC_GUESS
+                    rvecs_in = [warm_rvec]
+                    tvecs_in = [warm_tvec]
 
                 ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
                     [obj_pts],
@@ -402,6 +457,8 @@ class FramebyFrameCalib:
                     (self.image_width, self.image_height),
                     mtx,
                     None,
+                    rvecs_in,
+                    tvecs_in,
                     flags=flags2,
                 )
             else:
