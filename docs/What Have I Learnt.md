@@ -28,6 +28,7 @@ By this project I have learnt:
  - Mahalanobis vs Euclidean distance: The M take correlations and different unit into account while calculating the distance
  - Homography: transform lines to lines
  - Affine Trans.: Homography while preserving parallelism 
+ - Camera Matrices: Extrinsics contain rotation and translation of camera; Intrinsics contain focal length and principal point.
  - Hough Trans.: ----!TODO!!------
 
 ### Ball Tracking

@@ -9,8 +9,4 @@ __pycache__/
 *.pt
 *.pth
 output/
-CLAUDE.md
 weights/*
-
-official_demo
-sn-tracking
