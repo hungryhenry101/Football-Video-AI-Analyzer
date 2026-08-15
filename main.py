@@ -11,6 +11,7 @@ from core.ball_tracker import BallTracker, BallDetector
 
 FOOTBALL_WEIGHT_FILE = "weights/football_best.pt"  # YOUR FOOTBALL WEIGHT FILE
 VIDEO_PATH = "input_vids/test2.mp4" # YOUR VIDEO PATH
+OUTPUT_DIR = "output/"
 
 PNL_KP_WEIGHTS = "weights/SV_kp"
 PNL_LINE_WEIGHTS = "weights/SV_lines"
@@ -38,6 +39,11 @@ ball_tracker = BallTracker(fps=fps)
 player_tracker = PlayerTracker(FOOTBALL_WEIGHT_FILE, device)
 
 bev_template = pnl_calib.create_bev_template()
+bev_canvas_h, bev_canvas_w = bev_template.shape[:2]
+
+# Video Output
+out_cam = cv2.VideoWriter(OUTPUT_DIR + 'cam.mp4', cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
+out_bev = cv2.VideoWriter(OUTPUT_DIR + 'bev.mp4', cv2.VideoWriter_fourcc(*'mp4v'), fps, (bev_canvas_w, bev_canvas_h))
 
 def has_display():
     if sys.platform == 'darwin' or sys.platform == 'win32':
@@ -105,12 +111,16 @@ for frame_idx in tqdm(range(total_frames)):
             x1, y1, x2, y2 = map(int, box)
             cv2.rectangle(cam_canva, (x1, y1), (x2, y2), (0, 0, 255), 2)  # red
 
+    out_cam.write(cam_canva)
+    out_bev.write(bev_canva)
+
     delay = max(1, int(1000 / fps))
     if has_display():
         cv2.imshow("cam", cam_canva)
         cv2.imshow("bev", bev_canva)
-        if cv2.waitKey(delay) & 0xFF == ord('q'):
-            break
+    if cv2.waitKey(delay) & 0xFF == ord('q'): break
 
 cv2.destroyAllWindows()
+out_cam.release()
+out_bev.release()
 cap.release()

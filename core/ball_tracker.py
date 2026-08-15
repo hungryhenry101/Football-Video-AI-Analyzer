@@ -18,6 +18,7 @@ class BallDetector:
             imgsz=960,
             classes=[0],
             device=self.device,
+            verbose=False
         )
         return detections
 
@@ -114,7 +115,7 @@ class BallTracker:
                 best_candidate = (x, y)
 
         if best_candidate is None:
-            print("no best candidate")
+            print(" no best candidate for ball tracker")
 
         return best_candidate
 

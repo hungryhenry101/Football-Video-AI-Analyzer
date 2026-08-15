@@ -31,6 +31,7 @@ class PlayerTracker:
             conf=self.conf_thres,
             tracker=self.tracker_config,
             device=self.device,
+            verbose=False
         )
 
         objs = []
