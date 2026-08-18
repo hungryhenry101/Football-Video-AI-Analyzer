@@ -11,15 +11,16 @@
 </figure>
 </div>
 
-## 功能
+## 流程
 
 ### I. 球场检测 (相机标定)
 
-`core/pnl`
+`core/BroadTrack`
 
-采用了 [PnLCalib](https://arxiv.org/abs/2404.08401) 的方法:
-1. 使用 keypoint 模型检测关键点并使用 line detection 模型辅助检测
-2. 使用 FramebyFrameCalib 进行相机标定和优化
+使用 [BroadTrack](https://arxiv.org/abs/2412.01721) 的架构：
+- 主要使用 Line Segmentation Model，辅助使用Keypoint Model，来检测球场;
+- 通过光流法、pan 网格搜索 + 非线性优化、相机锚点优化相机标定;
+- 通过 IoU 评估检测结果。
 ![Pitch Detection](docs/pnl.png)
 
 ### II. 球员识别跟踪
@@ -73,6 +74,7 @@
 
 更详细的问题列表位于 [problems.md](docs/problems.md)
 
+- [ ] 一键下载模型脚本
 - [ ] 自动生成守门员处理球集锦
 - [ ] 威胁度评分（结合位置、球速、对方球员密度等特征）
 - [ ] 守门员姿态分析、运动速度轨迹分析
@@ -80,16 +82,26 @@
 
 ---
 
-## 参考
+## 参考与鸣谢
 
 ### 球场检测
-- SoccerNet Calibration: https://github.com/SoccerNet/sn-calibration
-- PnLCalib: https://arxiv.org/abs/2404.08401
+- [SoccerNet Calibration](https://github.com/SoccerNet/sn-calibration)
+- [BroadTrack](https://github.com/evs-broadcast/BroadTrack): 在其原版基础上进行优化并采用代码
+   ```bibtex
+   @inproceedings{Magera2025BroadTrack,
+     title = {BroadTrack: Broadcast Camera Tracking for Soccer},
+     author = {Magera, Floriane and Hoyoux, Thomas and Barnich, Olivier and Van Droogenbroeck, Marc},
+     booktitle = {Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+     month = {February},
+     year = {2025},
+     address = {Tucson, Arizona, USA}
+   }
+   ```
 
 ### 数据处理与分析
-- SoccermaticsForPython: https://github.com/Friends-of-Tracking-Data-FoTD/SoccermaticsForPython
-- Friends of Tracking: https://www.youtube.com/@friendsoftracking755
-- wyscout: https://apidocs.wyscout.com?version=3
+- [SoccermaticsForPython](https://github.com/Friends-of-Tracking-Data-FoTD/SoccermaticsForPython)
+- [Friends of Tracking](https://www.youtube.com/@friendsoftracking755): 极有帮助的学习资源
+- [wyscout](https://apidocs.wyscout.com?version=3)
 
 ---
 

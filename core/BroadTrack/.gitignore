@@ -1,0 +1,19 @@
+# Build artifacts
+build/
+
+# Local libtorch install (macOS build)
+/libtorch/
+libtorch/
+libtorch.zip
+
+# Test inputs / outputs
+frames/
+/out/
+out/
+out.json
+test_frames/
+broadtrack.json
+0*.jpg
+
+# OS cruft
+.DS_Store

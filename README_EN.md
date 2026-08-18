@@ -13,15 +13,16 @@ The ultimate goal is to automatically generate highlights and tactical analysis 
 </figure>
 </div>
 
-## Features
+## Pipeline
 
 ### I. Pitch Registration (Camera Calibration)
 
-`core/pnl`
+`core/BroadTrack`
 
-Using the architecture of [PnLCalib](https://arxiv.org/abs/2404.08401):
-1. Detect the keypoints with a KP model, then use a line detection model to assist with pitch fitting
-2. Calibrate the camera and optimise the result with FramebyFrameCalib
+Uses the architecture of [BroadTrack](https://arxiv.org/abs/2412.01721):
+- Detects the pitch with Line Segmentation Model mainly and Keypoint Model in assistance;
+- Optimises the camera calibration with optical flow, pan grid-search + parabolic refinement, camera anchor;
+- Evaluate the result by IoU score.
 ![Pitch Detection](docs/pnl.png)
 
 ### II. Player Detection and Tracking
@@ -74,6 +75,7 @@ and train it (YOLO11 is used in demonstration). Put the trained weights file to 
 
 Detailed problem list here:  [problems.md](docs/problems.md)
 
+- [ ] Model downloading script
 - [ ] Automatically generate goalkeeper highlight reels
 - [ ] Threat level rating (combining location, ball speed, opponent density, etc.)
 - [ ] Goalkeeper pose analysis and velocity trajectory analysis
@@ -81,16 +83,26 @@ Detailed problem list here:  [problems.md](docs/problems.md)
 
 ---
 
-## References
+## References & Acknowledgments
 
-### Pitch Detection
-- SoccerNet Calibration: https://github.com/SoccerNet/sn-calibration
-- PnLCalib: https://arxiv.org/abs/2404.08401
+### Pitch Registration
+- [SoccerNet Calibration](https://github.com/SoccerNet/sn-calibration)
+- [BroadTrack](https://github.com/evs-broadcast/BroadTrack): Adapted code from this project
+   ```bibtex
+   @inproceedings{Magera2025BroadTrack,
+     title = {BroadTrack: Broadcast Camera Tracking for Soccer},
+     author = {Magera, Floriane and Hoyoux, Thomas and Barnich, Olivier and Van Droogenbroeck, Marc},
+     booktitle = {Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+     month = {February},
+     year = {2025},
+     address = {Tucson, Arizona, USA}
+   }
+   ```
 
 ### Data Processing & Analytics
-- SoccermaticsForPython: https://github.com/Friends-of-Tracking-Data-FoTD/SoccermaticsForPython
-- Friends of Tracking: https://www.youtube.com/@friendsoftracking755
-- wyscout: https://apidocs.wyscout.com?version=3
+- [SoccermaticsForPython](https://github.com/Friends-of-Tracking-Data-FoTD/SoccermaticsForPython)
+- [Friends of Tracking](https://www.youtube.com/@friendsoftracking755): helpful learning resources
+- [wyscout](https://apidocs.wyscout.com?version=3)
 
 ---
 
