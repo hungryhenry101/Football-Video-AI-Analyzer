@@ -30,6 +30,7 @@ By this project I have learnt:
  - Affine Trans.: Homography while preserving parallelism 
  - Camera Matrices: Extrinsics contain rotation and translation of camera; Intrinsics contain focal length and principal point.
  - Hough Trans.: ----!TODO!!------
+ - Parabolic interpolation: 
 
 ### Ball Tracking
  - Matrices Multiplication: transform a point from one coord sys to another

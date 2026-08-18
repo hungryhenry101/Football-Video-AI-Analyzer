@@ -78,28 +78,35 @@ class BallTracker:
         # gating threshold
         self.gate_threshold = chi2.ppf(chi2_thres, df=2)
 
-        self.initialized = False
+        # state machine: UNINIT | INIT | NO_DET | GATE_FAIL | TRACKING
+        self.state = "UNINIT"
 
     def initialize(self, x, y):
         self.kf.x = np.array([[x],[y],[0],[0]], dtype=np.float32)  # Current State
         self.kf.P = np.eye(4, dtype=np.float32) * 0.1  # Error Covariance
-        self.initialized = True
+        self.state = "INIT"
 
     def process_frame(self, candidates):
         # main
         best = self.select_best_candidate(candidates)
         if best is not None:
             self.update(best[0], best[1])
+        else:
+            print("")
         return self.get_position()
 
     def select_best_candidate(self, candidates):
         """
         candidates: list of (x, y) detections in BEV coordinates after warp
         """
-        if not self.initialized:
+        if self.state == "UNINIT":
             # no gate on first frame
             if len(candidates) > 0:
                 return candidates[0]
+            return None
+
+        if candidates is None:
+            self.state = "NO_DET"
             return None
 
         self.predict()
@@ -115,7 +122,9 @@ class BallTracker:
                 best_candidate = (x, y)
 
         if best_candidate is None:
-            print(" no best candidate for ball tracker")
+            self.state = "GATE_FAIL"
+        else:
+            self.state = "TRACKING"
 
         return best_candidate
 
@@ -141,13 +150,13 @@ class BallTracker:
             return np.inf
 
     def predict(self):
-        if not self.initialized:
+        if self.state == "UNINIT":
             return None
         self.kf.predict()
         return self.get_position()
 
     def update(self, x, y):
-        if not self.initialized:
+        if self.state == "UNINIT":
             self.initialize(x, y)
             return
 
@@ -155,12 +164,12 @@ class BallTracker:
         self.kf.update(measurement)
 
     def get_position(self):
-        if not self.initialized:
+        if self.state == "UNINIT":
             return None
         return float(self.kf.x[0]), float(self.kf.x[1])
 
     def get_velocity(self):
         """Return Kalman filter velocity estimate (vx, vy) in m/s."""
-        if not self.initialized:
+        if self.state == "UNINIT":
             return None
         return float(self.kf.x[2]), float(self.kf.x[3])

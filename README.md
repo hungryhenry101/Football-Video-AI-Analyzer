@@ -2,7 +2,7 @@
 
 简体中文｜[English](README_EN.md)
 
-目前该项目为研究/学习级产品，用于跟踪足球比赛中的人和球，并识别出守门员、计算威胁程度，用于最终自动生成守门员处理球集锦（未实现）。
+该项目当前处于研究开发阶段，已实现足球比赛视频中的场地检测（即相机标定）、人球识别和追踪。最终目标为威胁度量化和整体战术评估，由此自动生成集锦和赛后分析
 
 <div align="center">
 <figure>
@@ -13,7 +13,7 @@
 
 ## 功能
 
-### I. 球场识别与拟合
+### I. 球场检测 (相机标定)
 
 `core/pnl`
 
@@ -56,22 +56,20 @@
 
 > 测试比赛视频已内置于 `input_vids/` 中
 
-1. 训练模型：从 [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
-下载数据集并训练（演示使用的是 YOLO11）。训练好的权重文件放入 `weights` 文件夹，并在 `main.py` 中更改权重文件的路径
+1. 准备足球和球员的检测模型：从 [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
+下载数据集并训练（仅测试过 YOLO11）。将训练好的权重文件放入 `weights` 文件夹，并在 `main.py` 中更改权重文件的路径
+1. 下载足球场地的关键点与球场线检测模型：从[PnLCalib](https://github.com/mguti97/PnLCalib/releases)下载 (使用 SV_kp 与 SV_lines 测试过)，并将其放入 `weights` 文件夹
 1. 安装依赖：
    ```bash
    pip install -r requirements.txt
    ```
 
-1. 将模型文件放入 `models/`, 将比赛视频放入 `input_vids/` 
-1. 在 main.py 中修改 `model` 和 `VIDEO_PATH` 为你的文件路径
+1. 在 main.py 中修改几个 weight 路径和 `VIDEO_PATH` 为你的文件路径
 1. 运行 main.py，弹出 cam视角、bev视角 窗口
 
 ---
 
 ## TODO
-
-![project plan](docs/project_plan.jpg)
 
 更详细的问题列表位于 [problems.md](docs/problems.md)
 

@@ -2,7 +2,9 @@
 
 [简体中文](README.md) ｜ English
 
-This project is currently a research/learning prototype designed to track players and the ball in football match videos, aiming to automatically generate goalkeeper highlight reels and analytics.
+The project is currently under Research & Development. 
+Pitch registration (camera calibration), detection and tracking of balls and players are implemented but require optimising.
+The ultimate goal is to automatically generate highlights and tactical analysis by quantification and evaluation of certain metrics, such as threat models
 
 <div align="center">
 <figure>
@@ -13,7 +15,7 @@ This project is currently a research/learning prototype designed to track player
 
 ## Features
 
-### I. Pitch Detection & Fitting
+### I. Pitch Registration (Camera Calibration)
 
 `core/pnl`
 
@@ -54,23 +56,21 @@ Using the architecture of [PnLCalib](https://arxiv.org/abs/2404.08401):
 
 ## Quick Start
 
-> The test match video is included in `input_vids/`.
+> The test video clips are under `input_vids/`.
 
-1. Model Training：Download dataset from [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
+1. Prepare detection model for ball & player：Download dataset from [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
 and train it (YOLO11 is used in demonstration). Put the trained weights file to `weights` folder, and edit the path of weight file in `main.py`
-1. Install dependencies:
+1. Download keypoint model and line detection model from [PnLCalib](https://github.com/mguti97/PnLCalib/releases) (tested with SV_kp and SV_lines), and place them in `weights/`
+1. Install dependencies (only tested with python 3.10):
    ```bash
    pip install -r requirements.txt
    ```
 
-1. Place the model file in `models/` and the match video in `input_vids/`.
-1. Update the `model` and `VIDEO_PATH` in `main.py` with your file paths.
+1. Update the weight paths and `VIDEO_PATH` in `main.py` with your file paths.
 1. Run `main.py`: View of camera and BEV will show up
 ---
 
 ## TODO
-
-![project plan](docs/project_plan.jpg)
 
 Detailed problem list here:  [problems.md](docs/problems.md)
 

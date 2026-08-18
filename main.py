@@ -2,8 +2,8 @@ import os
 import sys
 
 import cv2
-import torch
 from tqdm import tqdm
+import torch
 from core.pnl.pnl_calib import PnLCalib
 from core.pnl.projection_utils import pixel_to_ground
 from core.player_tracker import PlayerTracker
@@ -59,7 +59,7 @@ if has_display():
 
 # MAIN LOOP
 last_calib = None
-for frame_idx in tqdm(range(total_frames)):
+for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
     ret, frame = cap.read()
     if not ret:
         tqdm.write("Failed to read frame")
@@ -98,9 +98,10 @@ for frame_idx in tqdm(range(total_frames)):
     # BEV: ball via pixel_to_ground
     ball_candidates = ball_detector.project_to_ground(ball_dets, K, R, t)
     prediction = ball_tracker.process_frame(ball_candidates)
+    cv2.putText(bev_canva, ball_tracker.state, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1 , (255,0,0), 2)
     if prediction is not None:
         px, py = pnl_calib.world_to_bev_px(prediction[0], prediction[1])
-        cv2.circle(bev_canva, (px, py), 5, (0, 0, 255), -1)
+        cv2.circle(bev_canva, (px, py), 5, (0, 255, 255), -1) # yellow
 
     # Camera Plane
     player_tracker.draw_tracks(cam_canva, player_dets)
