@@ -72,8 +72,8 @@ class BallTracker:
         ], np.float32)
 
         # noise parameters in meter units
-        self.kf.Q = np.eye(4) * 0.25  # process noise
-        self.kf.R = np.eye(2) * 0.2  # measurement noise
+        self.kf.Q = np.eye(4) * 0.32  # process noise
+        self.kf.R = np.eye(2) * 0.3  # measurement noise
 
         # gating threshold
         self.gate_threshold = chi2.ppf(chi2_thres, df=2)

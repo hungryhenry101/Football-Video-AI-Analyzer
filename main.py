@@ -42,6 +42,8 @@ bev_template = pnl_calib.create_bev_template()
 bev_canvas_h, bev_canvas_w = bev_template.shape[:2]
 
 # Video Output
+if os.path.exists(OUTPUT_DIR) is False:
+    os.makedirs(OUTPUT_DIR)
 out_cam = cv2.VideoWriter(OUTPUT_DIR + 'cam.mp4', cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
 out_bev = cv2.VideoWriter(OUTPUT_DIR + 'bev.mp4', cv2.VideoWriter_fourcc(*'mp4v'), fps, (bev_canvas_w, bev_canvas_h))
 
@@ -53,6 +55,8 @@ def has_display():
 if has_display():
     cv2.namedWindow("cam", cv2.WINDOW_NORMAL)
     cv2.namedWindow("bev", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("cam", width, height)
+    cv2.resizeWindow("bev", bev_canvas_w, bev_canvas_h)
     cv2.moveWindow("cam", 50, 50)
     cv2.moveWindow("bev", 50 + width + 20, 50)
 
