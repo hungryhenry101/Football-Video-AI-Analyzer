@@ -17,9 +17,12 @@ if __name__ == '__main__':
     VIDEO_PATH = "input_vids/test2.mp4"
     cap = cv2.VideoCapture(VIDEO_PATH)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
 
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) / 2)
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) / 2)
+    
+    output = cv2.VideoWriter("output/pnl_demo.mp4", cv2.VideoWriter_fourcc(*'mp4v'), cap.get(cv2.CAP_PROP_FPS), (width, height))
 
     device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
 
@@ -38,8 +41,10 @@ if __name__ == '__main__':
         frame = cv2.resize(frame, (width, height))
         calib = pnl_calib.estimate(frame)
         pnl_calib.draw_pitch_lines(frame, color=(0, 255, 0), thickness=2)
+        output.write(frame)
         cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     cv2.destroyAllWindows()
     cap.release()
+    output.release()

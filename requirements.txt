@@ -1,7 +1,23 @@
-matplotlib
+# Core scientific / vision stack
 numpy
 opencv-python
-opencv-contrib-python
-tqdm
+scipy
+Pillow
+PyYAML
+matplotlib
+
+# PyTorch stack
+torch
+torchvision
+
+# Object tracking / detection
 ultralytics
 filterpy
+
+# Geometry / calibration helpers
+shapely
+sympy
+ellipse
+
+# Utility
+tqdm
