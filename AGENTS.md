@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code when working in this project. To make this file always up-to-date, modify it if major changes are made
+This file provides guidance to coding agents when working in this project. To make this file always up-to-date, modify it if major changes are made
 
 ## Project Overview
 
@@ -36,7 +36,6 @@ Read it before touching any projection code.
 Don't modify them before asking me or i told you so.
 
 ### under `demos/`
-
 
 ### gitignore
 - `output`: folder in root and in test folder

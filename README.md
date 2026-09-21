@@ -46,7 +46,7 @@
 </figure>
 </div>
 
-1. 通过前面得到的H，将所有足球放到BEV坐标系中
+1. 通过 Camera Calibration 得到的P，将所有足球放到BEV坐标系中
 2. 计算所有检测点距离之前球轨迹的 Mahalanobis Distance
 3. 使用 Chi Square 判断检测是否有效，选出最优的检测
 4. 用 Kalman Filter 预测，用于平滑化轨迹以及防止阻挡带来的问题

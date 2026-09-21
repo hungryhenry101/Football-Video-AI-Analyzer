@@ -76,6 +76,31 @@ std::vector<cv::Rect2d> loadHumanBboxes(std::string full_human_bboxes_path)
     return bboxes;
 }
 
+std::pair<cv::Mat, double> resizeFrameForProcessing(const cv::Mat &frame, double maxWidth = 1280.0, double maxHeight = 720.0)
+{
+    if (frame.empty())
+    {
+        return {frame.clone(), 1.0};
+    }
+
+    double scale = 1.0;
+    if (frame.cols > maxWidth || frame.rows > maxHeight)
+    {
+        scale = std::min(maxWidth / static_cast<double>(frame.cols),
+                         maxHeight / static_cast<double>(frame.rows));
+        scale = std::max(0.1, scale);
+    }
+
+    cv::Mat resized;
+    if (scale < 1.0)
+    {
+        cv::resize(frame, resized, cv::Size(), scale, scale, cv::INTER_AREA);
+        return {resized, scale};
+    }
+
+    return {frame.clone(), 1.0};
+}
+
  std::pair<Point3D, double> loadMatchTripodInfo(const std::string &filePath)
 {
     // Open the JSON file
@@ -258,6 +283,7 @@ int main(int argc, char *argv[])
 
         fs::path img_path = sequence / "000001.jpg"; 
         cv::Mat cv_img = cv::imread(img_path.string());
+        std::tie(cv_img, std::ignore) = resizeFrameForProcessing(cv_img);
         int image_width = cv_img.cols;
         int image_height = cv_img.rows;
         fs::path output_json_path = args.output_json;
@@ -349,6 +375,8 @@ int main(int argc, char *argv[])
                 continue;
             }
 
+            double processingScale = 1.0;
+            std::tie(currentCVFrame, processingScale) = resizeFrameForProcessing(currentCVFrame);
             double scale = 0.5;
 
             /**** OPTICAL FLOW ****/
@@ -356,6 +384,13 @@ int main(int argc, char *argv[])
             if (fs::exists(full_human_bboxes_path))
             {
                 bboxes = loadHumanBboxes(full_human_bboxes_path);
+                for (auto &bbox : bboxes)
+                {
+                    bbox.x *= processingScale;
+                    bbox.y *= processingScale;
+                    bbox.width *= processingScale;
+                    bbox.height *= processingScale;
+                }
             }
 
             std::vector<std::pair<Point3D, Point2D>> pitchProjections;

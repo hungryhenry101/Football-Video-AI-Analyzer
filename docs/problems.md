@@ -10,7 +10,7 @@
 1. 会将观众席或广告牌给识别为ui:
    - ~~??使用深度学习的目标检测（依旧yolo)，使用roboflow上的公开数据集以及手动标注数据集进行模型训练??~~
    - ~~??选点进行光流法??~~
-   - ✅使用球场模型进行相机标定，而不用ui mask
+   - 使用球场模型进行相机标定，而不用ui mask
 
 2. ByteTrack跟人效果差：
    - 用 BoT-SORT
@@ -18,12 +18,12 @@
 3. 跟球不稳定、把点球点和白鞋识别为球:
    - 计算 Chi Square
    - 用 Kalman Filter 代替 YOLO 自带跟踪器
-   - (unimplemented) 排除总在球员脚边的检测，以及固定不动且在点球点附近的检测
+   - todo: 排除总在球员脚边的检测，以及固定不动且在点球点附近的检测
 
 4. 性能极慢（ ~0.5 frame / s): (未达到预期)
    - GPU 加速
    - 使用 PnL: Keypoint + Line Model
-   - todo：只在预测区域内检测球，而非整个帧
+   - todo: 只在预测区域内检测球，而非整个帧
 
 
 ## 未解决：
@@ -35,6 +35,5 @@
    - 计划使用 KF 或其他 temporal smoothing method
 4. 球快速移动时KF跟不上:
    - 增加3个状态：Lost, Visible, Occluded
-5. 场地识别镜像问题
 6. 低视角较近距离拍摄无法有效检测足球场
 7. use separated models for ball detection and player detection
