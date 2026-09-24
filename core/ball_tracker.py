@@ -2,7 +2,7 @@ import numpy as np
 from ultralytics import YOLO
 from filterpy.kalman import KalmanFilter
 from scipy.stats import chi2
-from core.pnl.projection_utils import pixel_to_ground
+from core.projection_utils import pixel_to_ground
 
 
 class BallDetector:
@@ -72,8 +72,8 @@ class BallTracker:
         ], np.float32)
 
         # noise parameters in meter units
-        self.kf.Q = np.eye(4) * 0.32  # process noise
-        self.kf.R = np.eye(2) * 0.3  # measurement noise
+        self.kf.Q = np.eye(4) * 0.3  # process noise
+        self.kf.R = np.eye(2) * 0.25  # measurement noise
 
         # gating threshold
         self.gate_threshold = chi2.ppf(chi2_thres, df=2)
@@ -145,7 +145,10 @@ class BallTracker:
         try:
             inv_S = np.linalg.inv(S)
             d2 = y.T @ inv_S @ y
-            return float(d2)
+            # y is a (2, 1) column vector, so d2 comes back as a (1, 1) array.
+            # float() stopped accepting those in NumPy 1.25; .item() is the
+            # supported way to unwrap a single-element array.
+            return float(np.asarray(d2).item())
         except np.linalg.LinAlgError:
             return np.inf
 
@@ -166,10 +169,10 @@ class BallTracker:
     def get_position(self):
         if self.state == "UNINIT":
             return None
-        return float(self.kf.x[0]), float(self.kf.x[1])
+        return float(self.kf.x[0].item()), float(self.kf.x[1].item())
 
     def get_velocity(self):
         """Return Kalman filter velocity estimate (vx, vy) in m/s."""
         if self.state == "UNINIT":
             return None
-        return float(self.kf.x[2]), float(self.kf.x[3])
+        return float(self.kf.x[2].item()), float(self.kf.x[3].item())

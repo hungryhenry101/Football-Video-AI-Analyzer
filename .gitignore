@@ -9,5 +9,14 @@ __pycache__/
 *.pt
 *.pth
 output/
-weights/*
+/models/*
 *.pdf
+
+# BroadTrack C++ extension: build tree and the compiled module
+core/BroadTrack/python/build/
+core/broadtrack_calib/_broadtrack*.so
+core/broadtrack_calib/_broadtrack*.pyd
+core/broadtrack_calib/_broadtrack*.dll
+
+# Minimal Ceres built by scripts/build_minimal_ceres.py
+core/BroadTrack/third_party/

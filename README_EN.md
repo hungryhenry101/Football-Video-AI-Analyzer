@@ -13,15 +13,23 @@ The ultimate goal is to automatically generate highlights and tactical analysis 
 </figure>
 </div>
 
-## Features
+## Pipeline
 
 ### I. Pitch Registration (Camera Calibration)
 
-`core/pnl`
+`core/broadtrack_calib` (C++ core in `core/BroadTrack`)
 
-Using the architecture of [PnLCalib](https://arxiv.org/abs/2404.08401):
-1. Detect the keypoints with a KP model, then use a line detection model to assist with pitch fitting
-2. Calibrate the camera and optimise the result with FramebyFrameCalib
+Uses the architecture of [BroadTrack](https://arxiv.org/abs/2412.01721):
+- Detects the pitch with Line Segmentation Model mainly and Keypoint Model in assistance;
+- Optimises the camera calibration with optical flow, pan grid-search + parabolic refinement, camera anchor;
+- Evaluate the result by IoU score.
+
+The tracking loop is compiled to a Python extension with pybind11, so the Ceres
+bundle adjustment, the line-IoU score and the Lucas-Kanade association stay in
+C++ while the two detectors run on the Python `torch` already in the process.
+`BroadTrackCalib` is a drop-in for the former `PnLCalib`: same result keys, same
+coordinate frame, same drawing helpers. See
+[`core/BroadTrack/README.md`](core/BroadTrack/README.md).
 ![Pitch Detection](docs/pnl.png)
 
 ### II. Player Detection and Tracking
@@ -54,17 +62,27 @@ Using the architecture of [PnLCalib](https://arxiv.org/abs/2404.08401):
 
 ---
 
-## Quick Start
+## First Launch
 
 > The test video clips are under `input_vids/`.
 
 1. Prepare detection model for ball & player：Download dataset from [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
-and train it (YOLO11 is used in demonstration). Put the trained weights file to `weights` folder, and edit the path of weight file in `main.py`
-1. Download keypoint model and line detection model from [PnLCalib](https://github.com/mguti97/PnLCalib/releases) (tested with SV_kp and SV_lines), and place them in `weights/`
-1. Install dependencies (only tested with python 3.10):
+and train it (YOLO11 is used in demonstration). Put the trained weights file to the `models` folder, and edit the path of weight file in `main.py`
+1. Download BroadTrack's two TorchScript detectors — `nbjw_keypoint_model.pt` and `tvcalib_model.pt` from 
+[github](https://github.com/evs-broadcast/BroadTrack/tree/main/models). Place them in `models/`
+1. Create the environment and build the calibration extension:
    ```bash
-   pip install -r requirements.txt
+   conda env create -f environment.yml && conda activate football
+   python scripts/build_minimal_opencv.py   # once, ~20 min
+   python scripts/build_minimal_ceres.py    # once, ~5 min
+   python scripts/build_native.py
    ```
+   The two `build_minimal_*` steps compile OpenCV and Ceres locally rather than
+   using the packaged ones, because every packaged build of both pulls a second
+   OpenMP runtime into the process and PyTorch's wheel already ships one — the
+   interpreter then aborts on import. See
+   [`core/BroadTrack/README.md`](core/BroadTrack/README.md). On Linux
+   you also need RapidJSON and Boost headers, plus `metis` for Ceres.
 
 1. Update the weight paths and `VIDEO_PATH` in `main.py` with your file paths.
 1. Run `main.py`: View of camera and BEV will show up
@@ -74,6 +92,7 @@ and train it (YOLO11 is used in demonstration). Put the trained weights file to 
 
 Detailed problem list here:  [problems.md](docs/problems.md)
 
+- [ ] Model downloading script
 - [ ] Automatically generate goalkeeper highlight reels
 - [ ] Threat level rating (combining location, ball speed, opponent density, etc.)
 - [ ] Goalkeeper pose analysis and velocity trajectory analysis
@@ -81,16 +100,26 @@ Detailed problem list here:  [problems.md](docs/problems.md)
 
 ---
 
-## References
+## References & Acknowledgments
 
-### Pitch Detection
-- SoccerNet Calibration: https://github.com/SoccerNet/sn-calibration
-- PnLCalib: https://arxiv.org/abs/2404.08401
+### Pitch Registration
+- [SoccerNet Calibration](https://github.com/SoccerNet/sn-calibration)
+- [BroadTrack](https://github.com/evs-broadcast/BroadTrack): Adapted code from this project
+   ```bibtex
+   @inproceedings{Magera2025BroadTrack,
+     title = {BroadTrack: Broadcast Camera Tracking for Soccer},
+     author = {Magera, Floriane and Hoyoux, Thomas and Barnich, Olivier and Van Droogenbroeck, Marc},
+     booktitle = {Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+     month = {February},
+     year = {2025},
+     address = {Tucson, Arizona, USA}
+   }
+   ```
 
 ### Data Processing & Analytics
-- SoccermaticsForPython: https://github.com/Friends-of-Tracking-Data-FoTD/SoccermaticsForPython
-- Friends of Tracking: https://www.youtube.com/@friendsoftracking755
-- wyscout: https://apidocs.wyscout.com?version=3
+- [SoccermaticsForPython](https://github.com/Friends-of-Tracking-Data-FoTD/SoccermaticsForPython)
+- [Friends of Tracking](https://www.youtube.com/@friendsoftracking755): helpful learning resources
+- [wyscout](https://apidocs.wyscout.com?version=3)
 
 ---
 

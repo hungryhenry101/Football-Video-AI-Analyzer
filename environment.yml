@@ -1,0 +1,57 @@
+# Conda environment
+#
+#   conda env create -f environment.yml
+#   conda activate football
+#   python scripts/build_native.py
+#
+# Conda supplies Python and the build toolchain; the scientific stack comes from
+# PyPI wheels. That split is deliberate, not laziness — see the note on
+# numpy/scipy below.
+#
+# The C++ dependencies that scripts/build_native.py needs — OpenCV, Ceres Solver,
+# RapidJSON, Boost — are deliberately NOT listed here. They come from the system
+# package manager (Homebrew / apt / vcpkg), which is how the extension is built
+# and tested. See core/BroadTrack/README.md for the per-platform list.
+name: football
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pybind11>=2.12
+  - cmake>=3.23
+  - pip
+  - pip:
+      # numpy and scipy must come from PyPI, not conda-forge. Conda-forge's
+      # numpy/scipy link libopenblas, which in turn links conda-forge's
+      # libomp at $PREFIX/lib/libomp.dylib. PyTorch's wheel ships its own
+      # OpenMP (install name /opt/llvm-openmp/lib/libomp.dylib). Two OpenMP
+      # runtimes in one process make libomp abort the interpreter:
+      #
+      #     OMP: Error #15: Initializing libomp.dylib, but found libomp.dylib
+      #     already initialized.
+      #
+      # and it fires on a bare `import torch`. The PyPI wheels carry a
+      # self-consistent BLAS and never pull a second libomp.
+      - numpy
+      # scipy >= 1.16 is a hard floor, not a preference. Earlier wheels ship a
+      # Mach-O section that current macOS dyld refuses to load, which breaks
+      # `import scipy.linalg` outright and takes `filterpy` and `ultralytics`
+      # down with it. 1.16 was the first release built with the fixed
+      # toolchain, and it in turn requires Python >= 3.11 — hence python=3.12.
+      - scipy>=1.16
+      # PyTorch also comes from PyPI: the conda-forge macOS builds are
+      # `cpu_generic` with no MPS backend, and MPS is ~10x faster for the pitch
+      # keypoint model (~1.1 s vs ~11.7 s per frame).
+      - torch
+      - torchvision
+      - ultralytics
+      - filterpy
+      # Base OpenCV only. Do not also install opencv-contrib-python: both
+      # distributions provide the `cv2` module and installing them together
+      # overwrites files from the other, which produces a broken mix. Nothing
+      # in this project uses a contrib API.
+      - opencv-python
+      - tqdm
+      - matplotlib
+      # Test suite
+      - pytest
