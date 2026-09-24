@@ -15,12 +15,18 @@
 
 ### I. 球场检测 (相机标定)
 
-`core/BroadTrack`
+`core/broadtrack_calib`（C++ 核心在 `core/BroadTrack`）
 
 使用 [BroadTrack](https://arxiv.org/abs/2412.01721) 的架构：
 - 主要使用 Line Segmentation Model，辅助使用Keypoint Model，来检测球场;
 - 通过光流法、pan 网格搜索 + 非线性优化、相机锚点优化相机标定;
 - 通过 IoU 评估检测结果。
+
+追踪循环通过 pybind11 编译为 Python 扩展：Ceres 光束法平差、line-IoU 评分与
+Lucas-Kanade 光流关联都留在 C++，两个检测网络则复用进程中已有的 Python `torch`
+（不重复链接第二份 libtorch）。`BroadTrackCalib` 可直接替换原先的 `PnLCalib`：
+返回字段、坐标系与绘图接口都保持一致。详见
+[`core/BroadTrack/README.md`](core/BroadTrack/README.md)。
 ![Pitch Detection](docs/pnl.png)
 
 ### II. 球员识别跟踪
@@ -53,17 +59,26 @@
 
 ---
 
-## 如何启动？
+## 第一次启动？
 
 > 测试比赛视频已内置于 `input_vids/` 中
 
 1. 准备足球和球员的检测模型：从 [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
-下载数据集并训练（仅测试过 YOLO11）。将训练好的权重文件放入 `weights` 文件夹，并在 `main.py` 中更改权重文件的路径
-1. 下载足球场地的关键点与球场线检测模型：从[PnLCalib](https://github.com/mguti97/PnLCalib/releases)下载 (使用 SV_kp 与 SV_lines 测试过)，并将其放入 `weights` 文件夹
-1. 安装依赖：
+下载数据集并训练（仅测试过 YOLO11）。将训练好的权重文件放入 `models` 文件夹，并在 `main.py` 中更改模型路径
+1. 从 [github](https://github.com/evs-broadcast/BroadTrack/tree/main/models) 下载 BroadTrack 的两个 TorchScript 检测模型
+—— `nbjw_keypoint_model.pt` 与 `tvcalib_model.pt`。放入 `models/`
+1. 创建环境并构建标定扩展：
    ```bash
-   pip install -r requirements.txt
+   conda env create -f environment.yml && conda activate football
+   python scripts/build_minimal_opencv.py   # 只需一次，约 20 分钟
+   python scripts/build_minimal_ceres.py    # 只需一次，约 5 分钟
+   python scripts/build_native.py
    ```
+   两个 `build_minimal_*` 会在本地编译 OpenCV 和 Ceres，而不是用现成的包 ——
+   现有各家的这两个库都会往进程里再拉一份 OpenMP，而 PyTorch 的 wheel 已经自带
+   一份，两者相遇时解释器会在导入阶段直接 abort。详见
+   [`core/BroadTrack/README.md`](core/BroadTrack/README.md)。
+   Linux 上还需要 RapidJSON 与 Boost 头文件，以及 Ceres 依赖的 `metis`。
 
 1. 在 main.py 中修改几个 weight 路径和 `VIDEO_PATH` 为你的文件路径
 1. 运行 main.py，弹出 cam视角、bev视角 窗口

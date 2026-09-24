@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <random>
+#include <thread>
 
 const double MASK_TO_HD_FACTOR = 2.0;
 
@@ -275,7 +276,19 @@ std::tuple<double, Camera> CameraTracker::update(const cv::Mat &semLinesMask,
     }
 
     ceres::Solver::Options options;
-    options.num_threads = 32;
+    // Ask for as many threads as the machine actually has rather than a fixed
+    // number. Ceres clamps anything above ThreadPool::MaxNumThreadsAvailable()
+    // and logs "Specified options.num_threads: N exceeds maximum available ...
+    // Bounding to maximum number available." on every solve that overshoots
+    // (ChangeNumThreadsIfNeeded, internal/ceres/preprocessor.cc), so the
+    // hardcoded 32 printed that warning once per frame on an 8-core machine.
+    // Note there is no -1 "auto" sentinel in Ceres 2.x: only the value 1
+    // short-circuits, and a negative count falls through unclamped.
+    options.num_threads = static_cast<int>(std::thread::hardware_concurrency());
+    if (options.num_threads < 1)
+    {
+        options.num_threads = 1; // hardware_concurrency() may report 0
+    }
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);

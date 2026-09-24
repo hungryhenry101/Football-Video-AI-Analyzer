@@ -1,7 +1,7 @@
 from ultralytics import YOLO
 import cv2
 import numpy as np
-from core.pnl.projection_utils import pixel_to_ground
+from core.projection_utils import pixel_to_ground
 
 CLASS_NAMES = {
     0: "ball",

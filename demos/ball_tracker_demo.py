@@ -10,7 +10,7 @@ os.chdir(PROJECT_ROOT)
 import cv2
 import torch
 from core.ball_tracker import BallDetector, BallTracker
-from core.pnl.pnl_calib import PnLCalib
+from core.broadtrack_calib import BroadTrackCalib
 
 
 def main():
@@ -20,17 +20,17 @@ def main():
 
     device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
-    ball_detector = BallDetector("weights/football_best.pt", device)
+    ball_detector = BallDetector("models/football_best.pt", device)
     tracker = BallTracker(fps=fps)
 
-    pnl_calib = PnLCalib(
-        weights_kp="weights/SV_kp",
-        weights_line="weights/SV_lines",
+    calib_engine = BroadTrackCalib(
+        weights_kp="models/nbjw_keypoint_model.pt",
+        weights_line="models/tvcalib_model.pt",
         device=device,
         width=width,
         height=height
     )
-    bev_template = pnl_calib.create_bev_template()
+    bev_template = calib_engine.create_bev_template()
 
     cv2.moveWindow("frame", 50, 50)
     cv2.moveWindow("out bev", 50 + width + 20, 50)
@@ -41,7 +41,7 @@ def main():
             break
         frame = cv2.resize(frame, (width, height))
 
-        calib = pnl_calib.estimate(frame)
+        calib = calib_engine.estimate(frame)
         if calib is None:
             continue
         K, R, t = calib["K"], calib["R"], calib["t"]
@@ -54,7 +54,7 @@ def main():
             candidates = ball_detector.project_to_ground(raw_balls, K, R, t)
             pred = tracker.process_frame(candidates)
             if pred is not None:
-                px, py = pnl_calib.world_to_bev_px(pred[0], pred[1])
+                px, py = calib_engine.world_to_bev_px(pred[0], pred[1])
                 cv2.circle(bev_img, (px, py), 5, (255, 0, 0), -1)
 
             # raw detections (green on camera)
@@ -67,7 +67,7 @@ def main():
         # all candidates (red on BEV)
         p_balls = ball_detector.project_to_ground(raw_balls, K, R, t)
         for bx, by in p_balls:
-            px, py = pnl_calib.world_to_bev_px(bx, by)
+            px, py = calib_engine.world_to_bev_px(bx, by)
             cv2.circle(bev_img, (px, py), 5, (0, 0, 255), -1)
 
         cv2.imshow("frame", frame)

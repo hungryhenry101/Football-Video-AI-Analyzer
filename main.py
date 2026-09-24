@@ -4,17 +4,19 @@ import sys
 import cv2
 from tqdm import tqdm
 import torch
-from core.pnl.pnl_calib import PnLCalib
-from core.pnl.projection_utils import pixel_to_ground
+from core.broadtrack_calib import BroadTrackCalib
+from core.projection_utils import pixel_to_ground
 from core.player_tracker import PlayerTracker
 from core.ball_tracker import BallTracker, BallDetector
 
-FOOTBALL_WEIGHT_FILE = "weights/football_best.pt"  # YOUR FOOTBALL WEIGHT FILE
+FOOTBALL_WEIGHT_FILE = "models/football_best.pt"  # YOUR FOOTBALL WEIGHT FILE
 VIDEO_PATH = "input_vids/test2.mp4" # YOUR VIDEO PATH
 OUTPUT_DIR = "output/"
 
-PNL_KP_WEIGHTS = "weights/SV_kp"
-PNL_LINE_WEIGHTS = "weights/SV_lines"
+# BroadTrack's TorchScript detectors. See core/BroadTrack/README.md;
+# all four weights live in models/ (that directory is gitignored).
+BROADTRACK_KP_WEIGHTS = "models/nbjw_keypoint_model.pt"
+BROADTRACK_LINE_WEIGHTS = "models/tvcalib_model.pt"
 
 # VIDEO PROCESSING
 cap = cv2.VideoCapture(VIDEO_PATH)
@@ -27,18 +29,20 @@ device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.i
 print(f"Using device: {device}")
 
 # CORE init
-pnl_calib = PnLCalib(
-    weights_kp=PNL_KP_WEIGHTS,
-    weights_line=PNL_LINE_WEIGHTS,
+# The line segmentation model is small enough that CPU and MPS are equivalent;
+# only the keypoint model (used on re-init) really wants the accelerator.
+calib_engine = BroadTrackCalib(
+    weights_kp=BROADTRACK_KP_WEIGHTS,
+    weights_line=BROADTRACK_LINE_WEIGHTS,
     device=device,
     width=width,
-    height=height
+    height=height,
 )
 ball_detector = BallDetector(FOOTBALL_WEIGHT_FILE, device)
 ball_tracker = BallTracker(fps=fps)
 player_tracker = PlayerTracker(FOOTBALL_WEIGHT_FILE, device)
 
-bev_template = pnl_calib.create_bev_template()
+bev_template = calib_engine.create_bev_template()
 bev_canvas_h, bev_canvas_w = bev_template.shape[:2]
 
 # Video Output
@@ -68,7 +72,14 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
     cam_canva = frame.copy()
     bev_canva = bev_template.copy()
 
-    calib = pnl_calib.estimate(frame)
+    # Players first: BroadTrack uses the boxes to reject optical-flow points
+    # that landed on a moving player, which is what its `human-bboxes` input
+    # does upstream. Tracking is independent of the calibration, so there is no
+    # reason to run it second.
+    player_dets = player_tracker.update(frame)
+    player_boxes = [d["bbox"] for d in player_dets]
+
+    calib = calib_engine.estimate(frame, boxes=player_boxes)
     if calib is None:
         tqdm.write("Failed to estimate calib")
         if last_calib is not None:
@@ -82,9 +93,8 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
     t = calib["t"]
 
     # project detected lines to cam view
-    pnl_calib.draw_pitch_lines(cam_canva, color=(0,255,0), thickness=2)
+    calib_engine.draw_pitch_lines(cam_canva, color=(0,255,0), thickness=2)
 
-    player_dets = player_tracker.update(frame)
     ball_dets = ball_detector.detect(frame)
 
     # BEV: players via pixel_to_ground (bottom-center = ground contact point)
@@ -92,7 +102,7 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
     for tid, (cx, cy) in player_centers.items():
         pt = pixel_to_ground(cx, cy, K, R, t)
         if pt is not None:
-            px, py = pnl_calib.world_to_bev_px(pt[0], pt[1])
+            px, py = calib_engine.world_to_bev_px(pt[0], pt[1])
             cv2.circle(bev_canva, (px, py), 4, (255, 0, 0), -1)
 
     # BEV: ball via pixel_to_ground
@@ -100,7 +110,7 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
     prediction = ball_tracker.process_frame(ball_candidates)
     cv2.putText(bev_canva, ball_tracker.state, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1 , (255,0,0), 2)
     if prediction is not None:
-        px, py = pnl_calib.world_to_bev_px(prediction[0], prediction[1])
+        px, py = calib_engine.world_to_bev_px(prediction[0], prediction[1])
         cv2.circle(bev_canva, (px, py), 5, (0, 255, 255), -1) # yellow
 
     # Camera Plane
@@ -111,6 +121,10 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
         for box in ball_boxes:
             x1, y1, x2, y2 = map(int, box)
             cv2.rectangle(cam_canva, (x1, y1), (x2, y2), (0, 0, 255), 2)  # red
+
+    # Calibration quality (line-IoU against the segmented pitch lines)
+    cv2.putText(cam_canva, f"calib score {calib['score']:.2f}", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
     out_cam.write(cam_canva)
     out_bev.write(bev_canva)

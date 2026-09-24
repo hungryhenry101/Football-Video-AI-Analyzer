@@ -1,5 +1,6 @@
 # Build artifacts
 build/
+cmake-build-debug/
 
 # Local libtorch install (macOS build)
 /libtorch/
@@ -7,11 +8,10 @@ libtorch/
 libtorch.zip
 
 # Test inputs / outputs
-frames/
 /out/
 out/
 out.json
-test_frames/
+test_data/
 broadtrack.json
 0*.jpg
 
