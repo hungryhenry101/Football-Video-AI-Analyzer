@@ -1,13 +1,7 @@
 # Python dependencies only, for environments not created from environment.yml.
-# Note the scipy floor: see environment.yml for why scipy>=1.16 is required and
-# why that in turn means Python >= 3.11.
 #
-# For the conda environment this project is developed against:
-#     conda env create -f environment.yml && conda activate football
-#
-# The C++ dependencies for scripts/build_native.py (OpenCV, Ceres Solver,
-# RapidJSON, Boost) are system packages, not Python ones — see
-# core/BroadTrack/README.md.
+# The C++ dependencies (OpenCV, Ceres Solver, RapidJSON, Boost) are system packages,
+# not Python ones — see core/BroadTrack/README.md
 
 numpy
 scipy>=1.16
