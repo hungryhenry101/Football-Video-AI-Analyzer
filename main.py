@@ -9,7 +9,8 @@ from core.projection_utils import pixel_to_ground
 from core.player_tracker import PlayerTracker
 from core.ball_tracker import BallTracker, BallDetector
 
-FOOTBALL_WEIGHT_FILE = "models/football_best.pt"  # YOUR FOOTBALL WEIGHT FILE
+BALL_MODEL_PATH = "models/football_best.pt"
+PLAYER_MODEL_PATH = "models/yolo11m-seg.pt"
 VIDEO_PATH = "input_vids/test2.mp4" # YOUR VIDEO PATH
 OUTPUT_DIR = "output/"
 
@@ -29,8 +30,6 @@ device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.i
 print(f"Using device: {device}")
 
 # CORE init
-# The line segmentation model is small enough that CPU and MPS are equivalent;
-# only the keypoint model (used on re-init) really wants the accelerator.
 calib_engine = BroadTrackCalib(
     weights_kp=BROADTRACK_KP_WEIGHTS,
     weights_line=BROADTRACK_LINE_WEIGHTS,
@@ -38,9 +37,9 @@ calib_engine = BroadTrackCalib(
     width=width,
     height=height,
 )
-ball_detector = BallDetector(FOOTBALL_WEIGHT_FILE, device)
+ball_detector = BallDetector(BALL_MODEL_PATH, device)
 ball_tracker = BallTracker(fps=fps)
-player_tracker = PlayerTracker(FOOTBALL_WEIGHT_FILE, device)
+player_tracker = PlayerTracker(PLAYER_MODEL_PATH, device)
 
 bev_template = calib_engine.create_bev_template()
 bev_canvas_h, bev_canvas_w = bev_template.shape[:2]
@@ -76,10 +75,8 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
     cam_canva = frame.copy()
     bev_canva = bev_template.copy()
 
-    # Players first: BroadTrack uses the boxes to reject optical-flow points
-    # that landed on a moving player, which is what its `human-bboxes` input
-    # does upstream. Tracking is independent of the calibration, so there is no
-    # reason to run it second.
+    # Players first:
+    # BroadTrack uses the boxes to reject optical-flow points that landed on a moving player
     player_dets = player_tracker.update(frame)
     player_boxes = [d["bbox"] for d in player_dets]
 
@@ -101,7 +98,7 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
 
     ball_dets = ball_detector.detect(frame)
 
-    # BEV: players via pixel_to_ground (bottom-center = ground contact point)
+    # BEV: players via pixel_to_ground (bottom-centre = ground contact point)
     player_centers = player_tracker.get_player_centers(player_dets)
     for tid, (cx, cy) in player_centers.items():
         pt = pixel_to_ground(cx, cy, K, R, t)

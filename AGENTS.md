@@ -67,9 +67,9 @@ regression checks against the scores the upstream C++ binary recorded for the
 same sequence (`core/BroadTrack/out/anchored_pos.json`).
 
 ## Files and Docs
-Don't modify them before asking me or i told you so.
 
 ### under `demos/`
+Demos of core modules.
 
 ### gitignore
 - `output`: folder in root and in test folder

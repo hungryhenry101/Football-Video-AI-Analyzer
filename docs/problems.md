@@ -7,7 +7,7 @@
 
 ## 已解决：
 
-1. 会将观众席或广告牌给识别为ui:
+1. 光流法选点，会将观众席或广告牌给识别为ui:
    - ~~??使用深度学习的目标检测（依旧yolo)，使用roboflow上的公开数据集以及手动标注数据集进行模型训练??~~
    - ~~??选点进行光流法??~~
    - 使用球场模型进行相机标定，而不用ui mask
@@ -15,25 +15,29 @@
 2. ByteTrack跟人效果差：
    - 用 BoT-SORT
 
-3. 跟球不稳定、把点球点和白鞋识别为球:
+3. 跟球不稳定、把点球点和白鞋识别为球（未有效解决）:
    - 计算 Chi Square
    - 用 Kalman Filter 代替 YOLO 自带跟踪器
    - todo: 排除总在球员脚边的检测，以及固定不动且在点球点附近的检测
 
-4. 性能极慢（ ~0.5 frame / s): (未达到预期)
+4. 性能极慢（ ~0.5 frame / s): (仍未达到预期)
    - GPU 加速
-   - 使用 PnL: Keypoint + Line Model
+   - 使用 C++ BroadTrack
    - todo: 只在预测区域内检测球，而非整个帧
+
+5. 场地检测不稳定，乱跳，导致后续KF和位置问题
+   - 使用 C++ BroadTrack，其中有时序平滑处理
+
+6. object detection模型分类头人物分类不准，无法进行下一步颜色聚类
+   - 使用 Segmentation model
 
 
 ## 未解决：
 
-1. 在光照差异大的情况下，球场识别不稳定
-2. 高空球处理（长传、传中...）
+1. 高空球处理（长传、传中...）
    - PnL 创建了3D坐标系，计划尝试在BallTracker中使用3D
-3. 场地检测不稳定，乱跳，导致后续KF和位置问题：
-   - 计划使用 KF 或其他 temporal smoothing method
-4. 球快速移动时KF跟不上:
+2. 球快速移动时KF跟不上:
    - 增加3个状态：Lost, Visible, Occluded
-6. 低视角较近距离拍摄无法有效检测足球场
-7. use separated models for ball detection and player detection
+3. 低视角较近距离拍摄无法有效检测足球场：
+   - 每次处理前手动标注
+4. 球队分配，会被广告牌、球场、白线影响

@@ -1,60 +1,105 @@
+"""Player Detector (YOLO-seg) & Tracker (BoT-SORT)
+
+Uses COCO pretrained YOLO segmentation model.
+Will be used for colour clustering in downstream.
+"""
+
 from ultralytics import YOLO
 import cv2
 import numpy as np
 from core.projection_utils import pixel_to_ground
 
+# person id in COCO
+PERSON_CLASS = 0
+
 CLASS_NAMES = {
-    0: "ball",
-    1: "goalkeeper", ## TODO: identifying GK 1) color clustering; 2) position
-    2: "player",
-    3: "referee",
+    PERSON_CLASS: "person",
 }
 
 CLASS_COLORS = {
-    0: (0, 255, 0),
-    1: (0, 0, 255),
-    2: (255, 255, 255),
-    3: (0, 255, 255),
+    PERSON_CLASS: (255, 255, 255),
 }
 
+
 class PlayerTracker:
-    def __init__(self, model_path, device, tracker_config="config/botsort.yaml", conf_thres=0.2):
+    """YOLO-seg + BoT-SORT。
+
+    Args:
+        model_path: path of segmentation model
+        conf_thres: confidence threshold
+        imgsz: image size - 1280 instead of 640 as default
+    """
+
+    def __init__(
+        self,
+        model_path,
+        device,
+        tracker_config="config/botsort.yaml",
+        conf_thres=0.25,
+        imgsz=1280,
+    ):
         self.model = YOLO(model_path)
         self.tracker_config = tracker_config
         self.conf_thres = conf_thres
+        self.imgsz = imgsz
         self.device = device
 
     def update(self, frame):
+        """
+        Return [{id, bbox, cls, conf, mask}]
+        mask is consistent with bbox, in shape of (w,h); 1 represents person
+        """
         results = self.model.track(
             source=frame,
             persist=True,
             conf=self.conf_thres,
+            imgsz=self.imgsz,
+            classes=[PERSON_CLASS],
             tracker=self.tracker_config,
             device=self.device,
-            verbose=False
+            verbose=False,
         )
 
         objs = []
-        if results[0].boxes is not None and results[0].boxes.id is not None:
-            # 一次性从 GPU 拉取所有检测结果，减少同步开销
-            boxes_xyxy, ids, confs, clss = [
-                t.cpu().numpy() for t in [
-                    results[0].boxes.xyxy, results[0].boxes.id,
-                    results[0].boxes.conf, results[0].boxes.cls
-                ]
-            ]
-            ids = ids.astype(int)
-            clss = clss.astype(int)
+        r = results[0]
+        if r.boxes is None or r.boxes.id is None:
+            return objs
 
-            for box, tid, conf, cls in zip(boxes_xyxy, ids, confs, clss):
-                objs.append({
-                    "id": tid,
-                    "bbox": box,
-                    "cls": cls,
-                    "conf": conf,
-                })
+        boxes, ids, confs = [
+            t.cpu().numpy() for t in (r.boxes.xyxy, r.boxes.id, r.boxes.conf)
+        ]
+        ids = ids.astype(int)
+        polys = r.masks.xy if r.masks is not None else [None] * len(boxes)
+
+        for box, tid, conf, poly in zip(boxes, ids, confs, polys):
+            bbox, mask = self._clip_box_and_mask(poly, box, frame.shape[:2])
+            objs.append({
+                "id": tid,
+                "bbox": bbox,
+                "cls": PERSON_CLASS,
+                "conf": conf,
+                "mask": mask,
+            })
 
         return objs
+
+    @staticmethod
+    def _clip_box_and_mask(poly, box, frame_hw):
+        """ Deal with bbox to make sure its legal;
+            Rasterise the semantic mask. """
+        h, w = frame_hw
+        x1, y1, x2, y2 = (int(round(float(v))) for v in box)  # YOLO 给的是 float32
+        x1, x2 = max(0, min(x1, x2)), min(w, max(x1, x2))
+        y1, y2 = max(0, min(y1, y2)), min(h, max(y1, y2))
+        bbox = np.array([x1, y1, x2, y2], dtype=np.float32)
+        if x2 <= x1 or y2 <= y1:
+            return bbox, None
+
+        mask = np.zeros((y2 - y1, x2 - x1), np.uint8)
+        if poly is not None and len(poly) >= 3:
+            shifted = np.round(np.asarray(poly, dtype=np.float64) - (x1, y1)) # origin at top-left of bbox
+            cv2.fillPoly(mask, [shifted.astype(np.int32)], 1)
+        return bbox, mask
 
     def project_to_pitch(self, tracked_objects, K, R, t):
         if tracked_objects is None or K is None or R is None or t is None:
@@ -69,7 +114,7 @@ class PlayerTracker:
         return out_bev_players
 
     def get_player_centers(self, tracked_objects):
-        """get bottom-center points (for homography projection)"""
+        """get bottom-centre points (for homography projection)"""
         centers = {}
         for obj in tracked_objects:
             x1, y1, x2, y2 = obj["bbox"]
@@ -88,10 +133,18 @@ class PlayerTracker:
             color = CLASS_COLORS.get(cls, (255, 0, 0))
             name = CLASS_NAMES.get(cls, f"class_{cls}")
 
+            mask = obj.get("mask")
+            if mask is not None:
+                contours, _ = cv2.findContours(
+                    mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
+                offset = np.array([[x1, y1]], dtype=np.int32)
+                cv2.drawContours(frame, [c + offset for c in contours], -1, color, 1)
+
             # bbox
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
             # label
             label = f"{name} #{tid} {conf:.2f}"
-            cv2.putText(frame,label,(x1, y1 - 10),cv2.FONT_HERSHEY_SIMPLEX,0.5,color,2)
+            cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
         return frame

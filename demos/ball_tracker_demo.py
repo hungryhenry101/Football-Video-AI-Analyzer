@@ -16,7 +16,8 @@ from core.broadtrack_calib import BroadTrackCalib
 def main():
     vid = cv2.VideoCapture("input_vids/test2.mp4")
     fps = vid.get(cv2.CAP_PROP_FPS)
-    width, height = 735, 404
+    width = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH) / 2)   # CUSTOM WIDTH if needed
+    height = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT) / 2)  # CUSTOM HEIGHT if needed
 
     device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
