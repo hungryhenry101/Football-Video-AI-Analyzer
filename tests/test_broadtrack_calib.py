@@ -1,10 +1,11 @@
 """End-to-end calibration tests.
 
 These need BroadTrack's TorchScript detectors and a frame sequence; they skip
-when either is missing. ``core/BroadTrack/frames/`` is the 1920x1080 sequence the
-upstream C++ binary was run on, and ``core/BroadTrack/out/anchored_pos.json``
-holds the per-frame scores it recorded, so most of these are genuine regression
-checks against the reference implementation rather than self-consistency checks.
+when either is missing. ``core/BroadTrack/test_data/frames/`` is the 1920x1080
+sequence the upstream C++ binary was run on, and
+``core/BroadTrack/out/anchored_pos.json`` holds the per-frame scores it
+recorded, so most of these are genuine regression checks against the reference
+implementation rather than self-consistency checks.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import pytest
 from tests.conftest import requires_models, requires_sequence
 
 
-@requires_models
+@requires_sequence
 def test_estimate_returns_a_usable_camera(calib, frames):
     name, frame = frames[0]
     result = calib.estimate(frame)
@@ -67,7 +68,7 @@ def test_intrinsics_scale_with_the_frame_resolution(extension, size):
     assert result["focal_length"] > 0
 
 
-@requires_models
+@requires_sequence
 def test_intrinsics_are_in_frame_pixels(calib, frames):
     """Focal length and principal point must come back at the caller's
     resolution, not the tracker's internal 1920x1080."""
@@ -83,7 +84,7 @@ def test_intrinsics_are_in_frame_pixels(calib, frames):
     assert 0.8 * width < result["focal_length"] < 2.0 * width
 
 
-@requires_models
+@requires_sequence
 def test_camera_is_above_the_ground_and_near_the_pitch(calib, frames):
     result = calib.estimate(frames[0][1])
     x, y, z = result["t"]
@@ -179,7 +180,7 @@ def test_estimate_rejects_malformed_input(calib):
         calib.estimate(np.zeros((100, 100), dtype=np.uint8))
 
 
-@requires_models
+@requires_sequence
 def test_reset_reinitialises_from_keypoints(calib, frames):
     _, frame = frames[0]
     before = calib.estimate(frame)
@@ -192,7 +193,7 @@ def test_reset_reinitialises_from_keypoints(calib, frames):
     assert after["pan_deg"] == pytest.approx(before["pan_deg"], abs=1.0)
 
 
-@requires_models
+@requires_sequence
 def test_bev_round_trip_places_players_on_the_pitch(calib, frames):
     """A player standing on the centre mark must land at the BEV centre."""
     from core.projection_utils import pixel_to_ground, project_3d_to_pixel
@@ -210,7 +211,7 @@ def test_bev_round_trip_places_players_on_the_pitch(calib, frames):
     assert 0 <= py < template.shape[0]
 
 
-@requires_models
+@requires_sequence
 def test_line_mask_is_labelled_with_pitch_line_ids(calib, frames):
     """The mask that reaches the solver must be a label map, not a binary image:
     PointExtractor groups points per line id and skips UNDEFINED_LINE."""

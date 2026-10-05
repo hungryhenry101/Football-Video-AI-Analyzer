@@ -47,7 +47,7 @@ class PlayerTracker:
     def update(self, frame):
         """
         Return [{id, bbox, cls, conf, mask}]
-        mask is consistent with bbox, in shape of (w,h); 1 represents person
+        mask is relative to bbox, which means its origin is at (x1, y1)
         """
         results = self.model.track(
             source=frame,
@@ -88,7 +88,7 @@ class PlayerTracker:
         """ Deal with bbox to make sure its legal;
             Rasterise the semantic mask. """
         h, w = frame_hw
-        x1, y1, x2, y2 = (int(round(float(v))) for v in box)  # YOLO 给的是 float32
+        x1, y1, x2, y2 = (int(round(float(v))) for v in box)  # float32 from YOLO
         x1, x2 = max(0, min(x1, x2)), min(w, max(x1, x2))
         y1, y2 = max(0, min(y1, y2)), min(h, max(y1, y2))
         bbox = np.array([x1, y1, x2, y2], dtype=np.float32)

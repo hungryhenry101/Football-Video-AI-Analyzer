@@ -62,7 +62,7 @@ Read it before touching any projection code.
 
 `python -m pytest tests/ -q`. The geometry and detector-label-map tests always
 run; the end-to-end calibration tests need the BroadTrack TorchScript models and
-`core/BroadTrack/frames/`, and skip when those are absent. When present they are
+`core/BroadTrack/test_data/frames/`, and skip when those are absent. When present they are
 regression checks against the scores the upstream C++ binary recorded for the
 same sequence (`core/BroadTrack/out/anchored_pos.json`).
 
