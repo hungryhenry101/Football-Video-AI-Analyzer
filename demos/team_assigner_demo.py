@@ -67,6 +67,8 @@ def draw_cam(frame, dets, assigner):
             tag = "" if role == "player" else f" {role[:3].upper()}"
             if assignment["team"] is not None:
                 tag = f" T{assignment['team']}{tag}"
+        elif det["id"] in assigner.off_pitch:
+            tag = " OFF"  # dropped this frame: not read, and not in the panel
         cv2.putText(frame, f"#{det['id']}{tag}", (x1, max(14, y1 - 6)), FONT, 0.55, colour, 2)
     return frame
 
@@ -107,10 +109,15 @@ def report(assigner, observations):
         sd = float(np.std(samples)) if len(samples) > 1 else 0.0
         assignment = assigner.assignments.get(tid, {})
         team = assignment.get("team")
-        team = f"TEAM_{'AB'[team]}" if team is not None else assignment.get("role", "?").upper()
+        if tid in assigner.off_pitch:
+            label = "OFF"          # seen this frame, standing off the pitch
+        elif team is not None:
+            label = f"TEAM_{'AB'[team]}"
+        else:
+            label = assignment.get("role", "?").upper()
         mean = assigner.colours[tid]
         print(f"{tid:>5} {len(samples):>5} {mean[0]:>8.1f} {mean[1]:>8.1f} "
-              f"{mean[2]:>8.1f} {sd:>13.1f}  {team}")
+              f"{mean[2]:>8.1f} {sd:>13.1f}  {label}")
 
     means = team_means(assigner)
     sds = [float(np.std(np.array(observations[t], dtype=np.float32)))
@@ -170,6 +177,7 @@ def main():
                                      (bev_template.shape[1], bev_template.shape[0]))
 
     observations: dict[int, list] = {}
+    last_calib = None
     for idx in range(limit):
         ok, frame = cap.read()
         if not ok:
@@ -178,18 +186,29 @@ def main():
 
         dets = player_tracker.update(frame)
         calib = calib_engine.estimate(frame, boxes=[d["bbox"] for d in dets])
+        if calib is None:
+            # Same fallback main.py uses. Without a calibration the pitch
+            # filter has nothing to project with and lets everyone through,
+            # so a frame the solver refused would read the bench again.
+            calib = last_calib
+        else:
+            last_calib = calib
         K, R, t = (calib["K"], calib["R"], calib["t"]) if calib is not None else (None, None, None)
+
+        assigner.update(frame, dets, K, R, t)
 
         # Called for the statistics table only: update() computes the same
         # estimate internally, so this is a deliberate 2x on a step that is
         # cheap next to the detector and the solver. The alternative is reading
         # TeamAssigner's private accumulator, which the demo has no business doing.
+        # off_pitch is update()'s verdict, so the table holds the same people
+        # the clustering saw and a bystander never shows up as a stable kit.
         for det in dets:
+            if det["id"] in assigner.off_pitch:
+                continue
             sample = assigner.identify_jersey_colour(det, frame)
             if sample is not None:
                 observations.setdefault(det["id"], []).append(sample)
-
-        assigner.update(frame, dets, K, R, t)
 
         cam = draw_cam(frame, dets, assigner)
         panel = draw_panel(assigner, observations, idx, cam.shape[0])

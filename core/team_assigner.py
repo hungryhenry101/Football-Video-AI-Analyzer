@@ -7,6 +7,8 @@ Two stages:
 1. ``identify_jersey_colour`` extract a single colour from every mask
 2. ``cluster_colours`` finds the two teams among those per-player colours
 
+Only deal with people standing on the pitch — see ``filter_on_pitch``.
+
 Colour is in CIE-Lab. Clustering uses ``a``/``b`` plus ``L`` at a third of its
 scale. Chroma identifies a kit; ``L`` is what separates a black shirt from a
 white one — and a referee from a white-shirted team — because both are
@@ -32,11 +34,7 @@ REFEREE = "referee"
 ROLE_COLOURS = {REFEREE: (0, 255, 255), GOALKEEPER: (255, 0, 255)}
 UNKNOWN_COLOUR = (128, 128, 128)
 
-# How much of L enters the team split. A black kit and a white one sit at the
-# same chroma (a = b = 128) and differ by ~210 in L, so L has to be present;
-# but sun and shadow move L across the pitch far more than they move chroma, so
-# it has to be quiet. A third keeps black-vs-white (~70 in feature units) well
-# clear of a shade boundary (~20-27) while leaving chroma dominant.
+# the weight of Lightness in clustering
 L_WEIGHT = 1.0 / 2.5
 
 REF_DIST_FACTOR = 2.4 # distance from the nearest team colour, relative to the spread of the tighter team
@@ -45,10 +43,9 @@ REF_DIST_FLOOR = 25.0 # floor for ref dist
 TORSO_TOP = 0.20 # head and hair
 TORSO_BOTTOM = 0.55 # shorts and socks
 
-# A keeper inside their six-yard box: within 5.5 m of the goal line, and inside
-# the 18.32 m goal-area width. The referee works the central corridor instead.
-GOAL_LINE_X = 47.0
-GOAL_MOUTH_Y = 9.2
+PITCH_LENGTH = 105.0
+PITCH_WIDTH = 68.0
+PITCH_MARGIN = 1.0 # margin of pitch when deciding on pitch people
 
 def lab_to_bgr(lab):
     """The BGR triple a float CIE-Lab colour corresponds to.
@@ -87,6 +84,31 @@ class TeamAssigner:
         self.assignments: dict[int, dict] = {}        # id -> {"team", "role"}
         self.team_colours: dict[int, np.ndarray] = {} # team -> (3,) mean [L, a, b]
         self._acc: dict[int, list] = {}               # id -> [sum of LAB, count]
+        self.off_pitch: set[int] = set()              # ids dropped by the last update()
+
+    # ----------------------------------------------------------- the pitch
+
+    def filter_on_pitch(self, tracked_objects, K=None, R=None, t=None):
+        if K is None or R is None or t is None:
+            return list(tracked_objects), set()
+
+        on_pitch, off_pitch = [], set()
+        for obj in tracked_objects:
+            x1, _, x2, y2 = obj["bbox"]
+            if self._inside_pitch(pixel_to_ground((x1 + x2) / 2, y2, K, R, t)):
+                on_pitch.append(obj)
+            else:
+                off_pitch.add(obj["id"])
+        return on_pitch, off_pitch
+
+    @staticmethod
+    def _inside_pitch(point):
+        if point is None:
+            return False
+        return (
+            abs(float(point[0])) <= PITCH_LENGTH / 2 + PITCH_MARGIN
+            and abs(float(point[1])) <= PITCH_WIDTH / 2 + PITCH_MARGIN
+        )
 
     # ---------------------------------------------------------------- stage 1
 
@@ -226,9 +248,8 @@ class TeamAssigner:
 
     def update(self, frame, tracked_objects, K=None, R=None, t=None):
         """With history data and new detections, re-cluster every known player.
-
         So it can handle players that are occluded or motion-blurred.
-        Re-clustering each frame is cheap: it runs over one colour vector per player, not over pixels.
+        Only deal with people on pitch — ``filter_on_pitch`` runs first
 
         Args:
             frame: current frame
@@ -236,11 +257,11 @@ class TeamAssigner:
             K, R, t: pitch calibration, for position information
 
         Returns:
-            ``{id: {"team": TEAM_A | TEAM_B | None, "role": str}}``.
-            Players with no readable colour are absent.
-            Outliers get ``team=None``.
+            ``{id: {"team": TEAM_A | TEAM_B | None, "role": str}}``
         """
-        for obj in tracked_objects:
+        on_pitch, self.off_pitch = self.filter_on_pitch(tracked_objects, K, R, t)
+
+        for obj in on_pitch:
             colour = self.identify_jersey_colour(obj, frame)
             if colour is None:
                 continue
@@ -255,21 +276,23 @@ class TeamAssigner:
         self.assignments = {}
         self.team_colours = {}
 
-        # One player is not two teams.
-        if len(self.colours) < 2:
+        # only those on pitch
+        ppl_on_pitch = {obj["id"] for obj in on_pitch}
+        detected = {obj["id"] for obj in tracked_objects}
+        ids = [tid for tid in self.colours if tid in ppl_on_pitch or tid not in detected]
+
+        # One player is not two teams
+        if len(ids) < 2:
             return self.assignments
 
-        ids = list(self.colours)
         colours = np.stack([self.colours[tid] for tid in ids])
         features = self._lab_cv2kmeans(colours)
         labels, centres = self.cluster_colours(features)
         labels, centres = self._sort_label(labels, centres, features)
 
-        # A kit far from both team colours is a third kit: keeper or referee.
         dist = np.linalg.norm(features[:, None, :] - centres[None, :, :], axis=2)
         nearest = dist.min(axis=1)
 
-        # Print each person's id and nearest distance
         print("=== Player ID and Nearest Distance ===")
         for i, tid in enumerate(ids):
             print(f"ID: {tid}, Nearest Distance: {nearest[i]:.4f}")
@@ -287,7 +310,7 @@ class TeamAssigner:
             REF_DIST_FACTOR * (min(spreads) if spreads else 0.0),
         )
 
-        positions = self._ground_positions(tracked_objects, K, R, t)
+        positions = self._ground_positions(on_pitch, K, R, t)
         for i, tid in enumerate(ids):
             if nearest[i] > threshold:
                 self.assignments[tid] = {
@@ -297,7 +320,7 @@ class TeamAssigner:
             else:
                 self.assignments[tid] = {"team": int(labels[i]), "role": PLAYER}
 
-        # Each team's jersey colour, for drawing. remove L's weight
+        # Each team's jersey colour for drawing, remove L's weight
         for team in (TEAM_A, TEAM_B):
             members = [
                 self.colours[tid]
@@ -326,24 +349,13 @@ class TeamAssigner:
 
     @staticmethod
     def _outlier_role(position):
-        """A third kit is a keeper if it is in a six-yard box, else the referee."""
-        if position is None:
-            return REFEREE
-        x, y = position
-        if abs(x) >= GOAL_LINE_X and abs(y) <= GOAL_MOUTH_Y:
-            return GOALKEEPER
+        # TODO: determine by position
         return REFEREE
 
     # ---------------------------------------------------------------- drawing
 
     def draw_colour(self, tid):
-        """BGR swatch for a track id.
-
-        A team member is drawn in their team's own jersey colour, so the
-        overlay tells you which kit is on screen rather than which cluster
-        index won. A third kit keeps its fixed role swatch — the point of the
-        referee and the keeper is to read as "not a team" at a glance.
-        """
+        """BGR swatch for a track id. """
         assignment = self.assignments.get(tid)
         if assignment is None:
             return UNKNOWN_COLOUR

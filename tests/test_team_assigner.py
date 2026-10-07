@@ -43,6 +43,12 @@ CAM_K = np.array([[366.0, 0.0, 960.0], [0.0, 366.0, 540.0], [0.0, 0.0, 1.0]])
 CAM_R = np.eye(3)
 CAM_T = np.array([0.0, 0.0, -20.0])
 
+# The same camera with a shorter lens: 200 px over the same 20 m drop, so
+# world = (u - 960) / 10 and the frame reaches 96 m along x and 54 m along y.
+# The pitch tests need that reach — CAM_K frames the 105 m pitch so tightly
+# that no pixel in the image lands off it.
+WIDE_K = np.array([[200.0, 0.0, 960.0], [0.0, 200.0, 540.0], [0.0, 0.0, 1.0]])
+
 
 def _lab(bgr):
     """The CIE-Lab triple of a single BGR colour, in OpenCV channel order."""
@@ -56,19 +62,19 @@ def _frame(h=1080, w=1920):
     return frame
 
 
-def _add_player(frame, tid, colour, x1, noise=6):
+def _add_player(frame, tid, colour, x1, y1=BOX_Y1, noise=6):
     """Paint a player onto the frame and return their tracker-style object.
 
     A little per-pixel noise, because a real torso is never one flat colour.
     """
-    x2 = x1 + BOX_W
+    x2, y2 = x1 + BOX_W, y1 + BOX_H
     patch = np.full((BOX_H, BOX_W, 3), colour, np.int16)
     rng = np.random.default_rng(tid)
     patch += rng.integers(-noise, noise + 1, patch.shape)
-    frame[BOX_Y1:BOX_Y2, x1:x2] = np.clip(patch, 0, 255).astype(np.uint8)
+    frame[y1:y2, x1:x2] = np.clip(patch, 0, 255).astype(np.uint8)
     return {
         "id": tid,
-        "bbox": np.array([x1, BOX_Y1, x2, BOX_Y2], np.float32),
+        "bbox": np.array([x1, y1, x2, y2], np.float32),
         "cls": 0,
         "conf": 0.9,
         "mask": np.ones((BOX_H, BOX_W), np.uint8),
@@ -96,6 +102,15 @@ def _line_up(frame, kits, x_start=100, spacing=80):
         _add_player(frame, 10 + i, kit, x_start + i * spacing)
         for i, kit in enumerate(kits)
     ]
+
+
+def _person_at(frame, tid, world_x, world_y, colour=RED):
+    """A person whose feet land at ``(world_x, world_y)`` metres, for ``WIDE_K``.
+
+    Bottom-centre is the ground contact point, so the box stands on the point.
+    """
+    u, v = int(round(960 + 10 * world_x)), int(round(540 + 10 * world_y))
+    return _add_player(frame, tid, colour, u - BOX_W // 2, y1=v - BOX_H)
 
 
 # ------------------------------------------------------------------ stage 1
@@ -377,3 +392,111 @@ def test_draw_colour_follows_the_assignment():
     assert assigner.draw_colour(10) != assigner.draw_colour(20)
     assert assigner.draw_colour(30) != assigner.draw_colour(10)
     assert assigner.draw_colour(999) == (128, 128, 128)   # never seen
+
+
+# ------------------------------------------------------------------ the pitch
+
+
+@pytest.mark.parametrize(
+    "world, expected",
+    [
+        ((0.0, 0.0), True),      # the centre spot
+        ((52.0, 30.0), True),    # the far corner flag
+        ((0.0, 40.0), False),    # the technical area
+        ((60.0, 0.0), False),    # behind the goal
+    ],
+)
+def test_the_pitch_rule(world, expected):
+    """Four lines at 105 x 68, plus PITCH_MARGIN for the calibration's error."""
+    frame = _frame()
+    obj = _person_at(frame, 1, *world)
+
+    on_pitch, off_pitch = TeamAssigner().filter_on_pitch([obj], WIDE_K, CAM_R, CAM_T)
+
+    assert bool(on_pitch) is expected
+    assert (1 in off_pitch) is not expected
+
+
+def _six_a_side(frame, **kwargs):
+    """Three reds and three blues in the middle of the pitch, ids 10-15."""
+    objs = [_person_at(frame, 10 + i, -20.0 + 8 * i, 0.0, RED) for i in range(3)]
+    objs += [_person_at(frame, 20 + i, 4.0 + 8 * i, 0.0, BLUE) for i in range(3)]
+    return objs
+
+
+def test_a_bystander_off_the_pitch_is_never_read():
+    """The bench is not a third team: his kit must not reach the clustering."""
+    frame = _frame()
+    objs = _six_a_side(frame)
+    bench = _person_at(frame, 99, 0.0, 45.0, YELLOW)
+
+    assigner = TeamAssigner()
+    assignments = assigner.update(frame, objs + [bench], WIDE_K, CAM_R, CAM_T)
+
+    assert 99 not in assigner.colours, "an off-pitch kit was sampled"
+    assert 99 not in assignments
+    assert 99 in assigner.off_pitch
+    assert assignments[10]["team"] != assignments[20]["team"], "the teams still split"
+
+
+def test_a_box_cut_off_by_the_frame_bottom_is_still_judged():
+    """The bug this rule exists for: the man in the bottom corner of the frame.
+
+    His feet are below the picture, so the box is clipped and bottom-centre is
+    not the feet — but it is still a ground point, and 54 m out is off the
+    pitch. Waving clipped boxes through keeps exactly the people standing in
+    the bottom corners, who are the ones off the pitch.
+    """
+    frame = _frame()
+    objs = _six_a_side(frame)
+    corner = _person_at(frame, 99, 0.0, 54.0, YELLOW)
+    assert corner["bbox"][3] >= frame.shape[0], "premise: the box is clipped"
+
+    assigner = TeamAssigner()
+    assignments = assigner.update(frame, objs + [corner], WIDE_K, CAM_R, CAM_T)
+
+    assert 99 not in assignments, "a clipped box was waved through"
+    assert 99 in assigner.off_pitch
+
+
+def test_a_player_who_wanders_off_stops_being_judged():
+    """He keeps his colour history, but he is not a verdict any more."""
+    first_frame = _frame()
+    wanderer = _person_at(first_frame, 99, 0.0, 20.0, YELLOW)   # on the pitch
+    assigner = TeamAssigner()
+    first = assigner.update(first_frame, _six_a_side(first_frame) + [wanderer],
+                            WIDE_K, CAM_R, CAM_T)
+    assert first[99]["role"] == REFEREE, "premise: he reads as a third kit"
+
+    later = _frame()
+    wanderer = _person_at(later, 99, 0.0, 45.0, YELLOW)         # behind the line
+    second = assigner.update(later, _six_a_side(later) + [wanderer], WIDE_K, CAM_R, CAM_T)
+
+    assert 99 not in second, "an off-pitch official is still being given a verdict"
+    assert 99 in assigner.off_pitch
+    assert 99 in assigner.colours, "his colour history should survive"
+
+
+def test_an_off_pitch_colour_does_not_steer_the_teams():
+    """A third kit out there must not drag a team centre, either."""
+    frame = _frame()
+    objs = _six_a_side(frame)
+    # A whole team's worth of bench, in a kit nothing like either side.
+    objs += [_person_at(frame, 30 + i, -4.0 + 8 * i, 44.0, GREEN) for i in range(3)]
+
+    assigner = TeamAssigner()
+    assignments = assigner.update(frame, objs, WIDE_K, CAM_R, CAM_T)
+
+    assert set(assignments) == {10, 11, 12, 20, 21, 22}
+    assert assignments[10]["team"] != assignments[20]["team"]
+
+
+def test_without_calibration_nobody_is_filtered():
+    """A frame the solver refused still has to produce team colours."""
+    frame = _frame()
+    objs = _line_up(frame, [RED, BLUE])
+
+    on_pitch, off_pitch = TeamAssigner().filter_on_pitch(objs, None, None, None)
+
+    assert on_pitch == objs
+    assert not off_pitch
