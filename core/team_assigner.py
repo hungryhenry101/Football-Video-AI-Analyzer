@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+from fontTools.ufoLib.glifLib import pointAttributesFormat1
 
 from core.projection_utils import pixel_to_ground
 
@@ -57,6 +58,18 @@ def lab_to_bgr(lab):
     return int(b), int(g), int(r)
 
 
+def ground_position(obj, K, R, t):
+    """Bottom-centre of each box on the ground plane, in world metres.
+
+    Bottom-centre because that is where a player meets the pitch.
+    """
+    if K is None or R is None or t is None:
+        return None
+    x1, _, x2, y2 = obj["bbox"]
+    point = pixel_to_ground((x1 + x2) / 2, y2, K, R, t)
+    return float(point[0]), float(point[1])
+
+
 class TeamAssigner:
     """Assign a team and a role to each tracked person.
 
@@ -80,7 +93,7 @@ class TeamAssigner:
             1.0,
         )
 
-        self.colours: dict[int, np.ndarray] = {}      # id -> (3,) mean [L, a, b]
+        self.player_colours: dict[int, np.ndarray] = {}      # id -> (3,) mean [L, a, b]
         self.assignments: dict[int, dict] = {}        # id -> {"team", "role"}
         self.team_colours: dict[int, np.ndarray] = {} # team -> (3,) mean [L, a, b]
         self._acc: dict[int, list] = {}               # id -> [sum of LAB, count]
@@ -269,23 +282,23 @@ class TeamAssigner:
             acc[0] += colour
             acc[1] += 1
 
-        self.colours = {
+        self.player_colours = {
             tid: (total / count).astype(np.float32)
             for tid, (total, count) in self._acc.items()
         }
         self.assignments = {}
         self.team_colours = {}
 
-        # only those on pitch
         ppl_on_pitch = {obj["id"] for obj in on_pitch}
         detected = {obj["id"] for obj in tracked_objects}
-        ids = [tid for tid in self.colours if tid in ppl_on_pitch or tid not in detected]
+        # players detected on-pitch, or not detected in this frame
+        ids = [tid for tid in self.player_colours if tid in ppl_on_pitch or tid not in detected]
 
         # One player is not two teams
         if len(ids) < 2:
             return self.assignments
 
-        colours = np.stack([self.colours[tid] for tid in ids])
+        colours = np.stack([self.player_colours[tid] for tid in ids]) # tid stands for track-id
         features = self._lab_cv2kmeans(colours)
         labels, centres = self.cluster_colours(features)
         labels, centres = self._sort_label(labels, centres, features)
@@ -293,10 +306,10 @@ class TeamAssigner:
         dist = np.linalg.norm(features[:, None, :] - centres[None, :, :], axis=2)
         nearest = dist.min(axis=1)
 
-        print("=== Player ID and Nearest Distance ===")
-        for i, tid in enumerate(ids):
-            print(f"ID: {tid}, Nearest Distance: {nearest[i]:.4f}")
-        print("=" * 40)
+        # print("=== Player ID and Nearest Distance ===")
+        # for i, tid in enumerate(ids):
+        #     print(f"ID: {tid}, Nearest Distance: {nearest[i]:.4f}")
+        # print("=" * 40)
 
         spreads = []
         for cluster in range(len(centres)):
@@ -310,20 +323,36 @@ class TeamAssigner:
             REF_DIST_FACTOR * (min(spreads) if spreads else 0.0),
         )
 
-        positions = self._ground_positions(on_pitch, K, R, t)
-        for i, tid in enumerate(ids):
-            if nearest[i] > threshold:
-                self.assignments[tid] = {
-                    "team": None,
-                    "role": self._outlier_role(positions.get(tid)),
-                }
-            else:
-                self.assignments[tid] = {"team": int(labels[i]), "role": PLAYER}
+        pitch_obj_map = {obj["id"]: obj for obj in on_pitch}
+        outliers = {}  # tid -> ground_position
+
+        for tid, label, dist in zip(ids, labels, nearest):
+            if dist <= threshold:
+                self.assignments[tid] = {"team": int(label), "role": PLAYER}
+                continue
+
+            obj = pitch_obj_map.get(tid)
+            if obj is None: # not detected in this frame
+                continue
+
+            outliers[tid] = ground_position(obj, K, R, t)
+
+        if outliers:
+            goal = np.array([PITCH_LENGTH / 2, 0.0])
+
+            gk_id = min(outliers,
+                key=lambda tid: np.linalg.norm(outliers[tid] - goal),
+            )
+            self.assignments[gk_id] = {"team": None, "role": GOALKEEPER}
+
+            for tid in outliers:
+                if tid != gk_id:
+                    self.assignments[tid] = {"team": None, "role": REFEREE}
 
         # Each team's jersey colour for drawing, remove L's weight
         for team in (TEAM_A, TEAM_B):
             members = [
-                self.colours[tid]
+                self.player_colours[tid]
                 for tid, a in self.assignments.items()
                 if a["team"] == team
             ]
@@ -331,26 +360,6 @@ class TeamAssigner:
                 self.team_colours[team] = np.mean(members, axis=0)
 
         return self.assignments
-
-    def _ground_positions(self, tracked_objects, K, R, t):
-        """Bottom-centre of each box on the ground plane, in world metres.
-
-        Bottom-centre because that is where a player meets the pitch.
-        """
-        if K is None or R is None or t is None:
-            return {}
-        positions = {}
-        for obj in tracked_objects:
-            x1, _, x2, y2 = obj["bbox"]
-            point = pixel_to_ground((x1 + x2) / 2, y2, K, R, t)
-            if point is not None:
-                positions[obj["id"]] = (float(point[0]), float(point[1]))
-        return positions
-
-    @staticmethod
-    def _outlier_role(position):
-        # TODO: determine by position
-        return REFEREE
 
     # ---------------------------------------------------------------- drawing
 

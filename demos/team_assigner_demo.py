@@ -1,7 +1,4 @@
-"""Team assignment over a real video, with the colour statistics behind it.
-
-From the repo root:
-
+"""
     python demos/team_assigner_demo.py
     python demos/team_assigner_demo.py --video input_vids/test1.mp4 --max-frames 200
     python demos/team_assigner_demo.py --save          # write output/*.mp4, no windows
@@ -47,7 +44,7 @@ def team_means(assigner):
     grouped = {}
     for tid, assignment in assigner.assignments.items():
         if assignment["team"] is not None:
-            grouped.setdefault(assignment["team"], []).append(assigner.colours[tid])
+            grouped.setdefault(assignment["team"], []).append(assigner.player_colours[tid])
     return {team: np.mean(cols, axis=0) for team, cols in grouped.items()}
 
 
@@ -88,7 +85,7 @@ def draw_panel(assigner, observations, frame_idx, height):
     y += 6
     cv2.putText(panel, "player  obs   sd", (12, y), FONT, 0.45, (170, 170, 170), 1)
     y += 12
-    for tid in sorted(assigner.colours):
+    for tid in sorted(assigner.player_colours):
         if y > height - 20:
             cv2.putText(panel, "...", (12, y), FONT, 0.5, (150, 150, 150), 1)
             break
@@ -104,7 +101,7 @@ def report(assigner, observations):
     print("\nper-player colour stability")
     print(f"{'id':>5} {'obs':>5} {'mean L':>8} {'mean a':>8} {'mean b':>8} {'per-frame sd':>13}  team")
     print("-" * 66)
-    for tid in sorted(assigner.colours):
+    for tid in sorted(assigner.player_colours):
         samples = np.array(observations.get(tid, []), dtype=np.float32)
         sd = float(np.std(samples)) if len(samples) > 1 else 0.0
         assignment = assigner.assignments.get(tid, {})
@@ -115,7 +112,7 @@ def report(assigner, observations):
             label = f"TEAM_{'AB'[team]}"
         else:
             label = assignment.get("role", "?").upper()
-        mean = assigner.colours[tid]
+        mean = assigner.player_colours[tid]
         print(f"{tid:>5} {len(samples):>5} {mean[0]:>8.1f} {mean[1]:>8.1f} "
               f"{mean[2]:>8.1f} {sd:>13.1f}  {label}")
 

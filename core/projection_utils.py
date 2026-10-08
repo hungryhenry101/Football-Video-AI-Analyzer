@@ -105,7 +105,7 @@ def pixel_to_3d(u, v, bbox_width_px, K, R, t, k1=0.0, k2=0.0):
 
 
 def pixel_to_ground(u, v, K, R, t, k1=0.0, k2=0.0):
-    """Image pixel → ground plane intersection (z=0).
+    """Image pixel to ground plane intersection (z=0).
 
     Uses the full camera model to find where the ray from the camera through
     pixel (u,v) intersects the pitch plane. More accurate than a homography
@@ -115,7 +115,7 @@ def pixel_to_ground(u, v, K, R, t, k1=0.0, k2=0.0):
         u, v: pixel coordinates
         K: 3×3 intrinsics
         R: 3×3 rotation (world → camera)
-        t: (3,) camera center in world
+        t: (3,) camera centre in world
 
     Returns:
         (2,) ground position [x, y] in meters, or None if ray is parallel

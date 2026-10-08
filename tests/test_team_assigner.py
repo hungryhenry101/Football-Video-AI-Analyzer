@@ -433,7 +433,7 @@ def test_a_bystander_off_the_pitch_is_never_read():
     assigner = TeamAssigner()
     assignments = assigner.update(frame, objs + [bench], WIDE_K, CAM_R, CAM_T)
 
-    assert 99 not in assigner.colours, "an off-pitch kit was sampled"
+    assert 99 not in assigner.player_colours, "an off-pitch kit was sampled"
     assert 99 not in assignments
     assert 99 in assigner.off_pitch
     assert assignments[10]["team"] != assignments[20]["team"], "the teams still split"
@@ -474,7 +474,7 @@ def test_a_player_who_wanders_off_stops_being_judged():
 
     assert 99 not in second, "an off-pitch official is still being given a verdict"
     assert 99 in assigner.off_pitch
-    assert 99 in assigner.colours, "his colour history should survive"
+    assert 99 in assigner.player_colours, "his colour history should survive"
 
 
 def test_an_off_pitch_colour_does_not_steer_the_teams():
