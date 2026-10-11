@@ -62,14 +62,6 @@ Read it before touching any projection code.
 - `pixel_to_3d(u,v,bbox_width,K,R,t)` → full 3D position from apparent ball size; **currently unused** but is the planned path for aerial/high balls (see problems.md).
 - `build_projection_matrix` / `project_3d_to_pixel` build and apply `P = K[R | -Rt]`.
 
-## Tests
-
-`python -m pytest tests/ -q`. The geometry and detector-label-map tests always
-run; the end-to-end calibration tests need the BroadTrack TorchScript models and
-`core/BroadTrack/test_data/frames/`, and skip when those are absent. When present they are
-regression checks against the scores the upstream C++ binary recorded for the
-same sequence (`core/BroadTrack/out/anchored_pos.json`).
-
 ## Files and Docs
 
 ### under `demos/`

@@ -42,9 +42,9 @@ def swatch(lab, size=44):
 def team_means(assigner):
     """{team label: mean Lab of the players currently on that team}."""
     grouped = {}
-    for tid, assignment in assigner.assign_acc.items():
-        if assignment[-1]["team"] is not None:
-            grouped.setdefault(assignment[-1]["team"], []).append(assigner.player_colours[tid])
+    for tid, assignment in assigner.voted_assignments.items():
+        if assignment.team is not None:
+            grouped.setdefault(assignment.team, []).append(assigner.voted_colours[tid])
     return {team: np.mean(cols, axis=0) for team, cols in grouped.items()}
 
 
@@ -57,13 +57,12 @@ def draw_cam(frame, dets, assigner):
         # Bottom-centre is the ground contact point, as on the BEV pane.
         cv2.circle(frame, ((x1 + x2) // 2, y2), 4, colour, -1)
 
-        assignment = assigner.assign_acc.get(det["id"])
+        assignment = assigner.voted_assignments.get(det["id"])
         tag = ""
         if assignment is not None:
-            role = assignment[-1]["role"]
-            tag = "" if role == "player" else f" {role[:3].upper()}"
-            if assignment[-1]["team"] is not None:
-                tag = f" T{assignment[-1]['team']}{tag}"
+            tag = "" if assignment.role == "player" else f" {assignment.role[:3].upper()}"
+            if assignment.team is not None:
+                tag = f" T{assignment.team}{tag}"
         elif det["id"] in assigner.off_pitch:
             tag = " OFF"  # dropped this frame: not read, and not in the panel
         cv2.putText(frame, f"#{det['id']}{tag}", (x1, max(14, y1 - 6)), FONT, 0.55, colour, 2)
@@ -77,7 +76,7 @@ def draw_panel(assigner, observations, frame_idx, height):
     y = 46
     for team, mean in sorted(team_means(assigner).items()):
         panel[y : y + 44, 12:56] = swatch(mean)
-        count = sum(1 for a in assigner.assign_acc.values() if a[-1]["team"] == team)
+        count = sum(1 for a in assigner.voted_assignments.values() if a.team == team)
         cv2.putText(panel, f"TEAM_{'AB'[team]}  n={count}", (66, y + 28), FONT, 0.5, (235, 235, 235), 1)
         cv2.putText(panel, f"L{mean[0]:.0f} a{mean[1]:.0f} b{mean[2]:.0f}", (66, y + 44), FONT, 0.4, (150, 150, 150), 1)
         y += 60
@@ -85,7 +84,7 @@ def draw_panel(assigner, observations, frame_idx, height):
     y += 6
     cv2.putText(panel, "player  obs   sd", (12, y), FONT, 0.45, (170, 170, 170), 1)
     y += 12
-    for tid in sorted(assigner.player_colours):
+    for tid in sorted(assigner.voted_colours):
         if y > height - 20:
             cv2.putText(panel, "...", (12, y), FONT, 0.5, (150, 150, 150), 1)
             break
@@ -95,45 +94,6 @@ def draw_panel(assigner, observations, frame_idx, height):
         cv2.putText(panel, f"#{tid:<4d} {len(samples):>4d}  {sd:5.1f}", (34, y + 13), FONT, 0.42, (225, 225, 225), 1)
         y += 19
     return panel
-
-
-def report(assigner, observations):
-    print("\nper-player colour stability")
-    print(f"{'id':>5} {'obs':>5} {'mean L':>8} {'mean a':>8} {'mean b':>8} {'per-frame sd':>13}  team")
-    print("-" * 66)
-    for tid in sorted(assigner.player_colours):
-        samples = np.array(observations.get(tid, []), dtype=np.float32)
-        sd = float(np.std(samples)) if len(samples) > 1 else 0.0
-        assignment = assigner.assignments.get(tid, {})
-        team = assignment.get("team")
-        if tid in assigner.off_pitch:
-            label = "OFF"          # seen this frame, standing off the pitch
-        elif team is not None:
-            label = f"TEAM_{'AB'[team]}"
-        else:
-            label = assignment.get("role", "?").upper()
-        mean = assigner.player_colours[tid]
-        print(f"{tid:>5} {len(samples):>5} {mean[0]:>8.1f} {mean[1]:>8.1f} "
-              f"{mean[2]:>8.1f} {sd:>13.1f}  {label}")
-
-    means = team_means(assigner)
-    sds = [float(np.std(np.array(observations[t], dtype=np.float32)))
-           for t in observations if len(observations[t]) > 1]
-    if len(means) < 2 or not sds:
-        print("\nnot enough of a sample to compare against a team separation")
-        return
-
-    centres = np.stack(list(means.values()))
-    separation = float(np.linalg.norm(centres[0] - centres[1]))
-    median_sd = float(np.median(sds))
-    median_obs = int(np.median([len(observations[t]) for t in observations]))
-    print(f"\nbetween-team distance      {separation:6.1f} Lab units")
-    print(f"median per-frame sd        {median_sd:6.1f} Lab units")
-    print(f"after {median_obs} frames of averaging {median_sd / np.sqrt(max(median_obs, 1)):6.1f}"
-          "   (noise falls ~1/sqrt(N))")
-    if median_sd > separation:
-        print("-> raw frames overlap; clustering them one by one would be a coin toss.")
-
 
 
 def main():
@@ -236,7 +196,6 @@ def main():
     if args.save:
         print("wrote output/team_cam.mp4 and output/team_bev.mp4")
 
-    report(assigner, observations)
     return 0
 
 

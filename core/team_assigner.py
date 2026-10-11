@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-from collections import deque, defaultdict
+from collections import deque, defaultdict, Counter
+from typing import NamedTuple
 
 from core.projection_utils import pixel_to_ground
 
@@ -48,6 +49,15 @@ PITCH_LENGTH = 105.0
 PITCH_WIDTH = 68.0
 PITCH_MARGIN = 1.0 # margin of pitch when deciding on pitch people
 
+
+class Assignment(NamedTuple):
+    """
+    Hashable, so a whole history can be voted on as-is. ``team`` is
+    ``TEAM_A``/``TEAM_B``, or None for a keeper or the referee.
+    """
+    team: int | None
+    role: str
+
 class TeamAssigner:
     """Assign a team and a role to each tracked person.
 
@@ -73,13 +83,10 @@ class TeamAssigner:
 
         self.team_colours: dict[int, np.ndarray] = {} # team -> (3,) mean [L, a, b]
         self.colour_acc: dict[int, deque] = defaultdict(lambda: deque(maxlen=20)) # id -> [LAB of each det]
-        self.assign_acc: dict[int, deque] = defaultdict(lambda: deque(maxlen=20)) # id -> [{"team", "role"}]
+        self.assign_acc: dict[int, deque] = defaultdict(lambda: deque(maxlen=20)) # id -> [Assignments of each det]
+        self.voted_colours: dict[int, np.ndarray] = {} # id -> mean LAB of the history
+        self.voted_assignments: dict[int, Assignment] = {} # id -> voted assignments
         self.off_pitch: set[int] = set() # ids off pitch
-
-    @property
-    def player_colours(self):
-        return {tid: np.mean(np.stack(list(c)), axis=0).astype(np.float32)
-                for tid, c in self.colour_acc.items()}
 
     # ----------------------------------------------------------- the pitch
 
@@ -195,7 +202,6 @@ class TeamAssigner:
         Args:
             colours: (N, D) array, one row per player.
             k: number of clusters.
-
         Returns:
             ``(labels (N,), centres (k, D))``;
             With fewer than ``k`` players every player is its own cluster
@@ -231,13 +237,19 @@ class TeamAssigner:
             self.colour_acc[obj["id"]].append(colour)
         self.team_colours = {}
 
+        # Mean the history once here, not on every read: it is the same dict
+        self.voted_colours = {
+            tid: np.mean(np.stack(list(c)), axis=0).astype(np.float32)
+            for tid, c in self.colour_acc.items()
+        }
+
         ppl_on_pitch = {obj["id"] for obj in on_pitch}
         detected = {obj["id"] for obj in tracked_objects}
         # players detected on-pitch, or not detected in this frame
-        ids = [tid for tid in self.player_colours if tid in ppl_on_pitch or tid not in detected]
+        ids = [tid for tid in self.voted_colours if tid in ppl_on_pitch or tid not in detected]
         if len(ids) < 2: return None # one player only
 
-        colours = np.stack([self.player_colours[tid] for tid in ids]) # tid stands for track-id
+        colours = np.stack([self.voted_colours[tid] for tid in ids]) # tid stands for track-id
         features = self.lab_cv2kmeans(colours)
         labels, centres = self.cluster_colours(features)
         labels, centres = self.sort_label(labels, centres, features)
@@ -267,7 +279,7 @@ class TeamAssigner:
 
         for tid, label, dist in zip(ids, labels, nearest):
             if dist <= threshold:
-                self.assign_acc[tid].append({"team": int(label), "role": PLAYER})
+                self.assign_acc[tid].append(Assignment(int(label), PLAYER))
                 continue
 
             obj = pitch_obj_map.get(tid)
@@ -281,18 +293,24 @@ class TeamAssigner:
             gk_id = min(outliers,
                 key=lambda tid: np.linalg.norm(outliers[tid] - goal),
             )
-            self.assign_acc[gk_id].append({"team": None, "role": GOALKEEPER})
+            self.assign_acc[gk_id].append(Assignment(None, GOALKEEPER))
 
             for tid in outliers:
                 if tid != gk_id:
-                    self.assign_acc[tid].append({"team": None, "role": REFEREE})
+                    self.assign_acc[tid].append(Assignment(None, REFEREE))
+
+        # voting the current assignments
+        self.voted_assignments = {
+            tid: Counter(history).most_common(1)[0][0]
+            for tid, history in self.assign_acc.items() if history
+        }
 
         # Each team's jersey colour for drawing, remove L's weight
         for team in (TEAM_A, TEAM_B):
             members = [
-                self.player_colours[tid]
-                for tid, a in self.assign_acc.items()
-                if a[-1]["team"] == team
+                self.voted_colours[tid]
+                for tid, a in self.voted_assignments.items()
+                if a.team == team
             ]
             if members:
                 self.team_colours[team] = np.mean(members, axis=0)
@@ -301,14 +319,14 @@ class TeamAssigner:
 
     def draw_colour(self, tid):
         """BGR swatch for a track id. """
-        assignment = self.assign_acc.get(tid)
+        assignment = self.voted_assignments.get(tid)
         if assignment is None:
             return UNKNOWN_COLOUR
-        if assignment[-1]["team"] is not None:
-            lab = self.team_colours.get(assignment[-1]["team"])
+        if assignment.team is not None:
+            lab = self.team_colours.get(assignment.team)
             if lab is not None:
                 return lab_to_bgr(lab)
-        return ROLE_COLOURS.get(assignment[-1]["role"], UNKNOWN_COLOUR)
+        return ROLE_COLOURS.get(assignment.role, UNKNOWN_COLOUR)
 
     @staticmethod
     def ground_position(obj, K, R, t):
