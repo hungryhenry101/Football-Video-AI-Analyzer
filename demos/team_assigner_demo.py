@@ -98,32 +98,22 @@ def draw_panel(assigner, observations, frame_idx, height):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--video", default="input_vids/test2.mp4")
+    parser.add_argument("--video", default="input_vids/test1.mp4")
     parser.add_argument("--max-frames", type=int, default=300, help="0 for the whole video")
     parser.add_argument("--save", action="store_true", help="write output/*.mp4 instead of showing windows")
     args = parser.parse_args()
-
     cap = cv2.VideoCapture(args.video)
-    if not cap.isOpened():
-        print(f"could not open {args.video}", file=sys.stderr)
-        return 1
-
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) / 2)   # as main.py does
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) / 2)
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     limit = min(args.max_frames, total) if args.max_frames else total
-
     device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
-    print(f"{args.video}: {total} frames at {width}x{height}, {limit} to process, on {device}")
-
     calib_engine = BroadTrackCalib(
         weights_kp=KEYPOINT_WEIGHTS, weights_line=LINE_WEIGHTS,
         device=device, width=width, height=height,
     )
     player_tracker = PlayerTracker(PLAYER_MODEL, device)
-    assigner = TeamAssigner()
-
     bev_template = calib_engine.create_bev_template()
     writer_cam = writer_bev = None
     if args.save:
@@ -132,6 +122,8 @@ def main():
         writer_cam = cv2.VideoWriter("output/team_cam.mp4", fourcc, fps, (width + PANEL_W, height))
         writer_bev = cv2.VideoWriter("output/team_bev.mp4", fourcc, fps,
                                      (bev_template.shape[1], bev_template.shape[0]))
+
+    assigner = TeamAssigner()
 
     observations: dict[int, list] = {}
     last_calib = None
@@ -144,28 +136,12 @@ def main():
         dets = player_tracker.update(frame)
         calib = calib_engine.estimate(frame, boxes=[d["bbox"] for d in dets])
         if calib is None:
-            # Same fallback main.py uses. Without a calibration the pitch
-            # filter has nothing to project with and lets everyone through,
-            # so a frame the solver refused would read the bench again.
             calib = last_calib
         else:
             last_calib = calib
         K, R, t = (calib["K"], calib["R"], calib["t"]) if calib is not None else (None, None, None)
 
         assigner.update(frame, dets, K, R, t)
-
-        # Called for the statistics table only: update() computes the same
-        # estimate internally, so this is a deliberate 2x on a step that is
-        # cheap next to the detector and the solver. The alternative is reading
-        # TeamAssigner's private accumulator, which the demo has no business doing.
-        # off_pitch is update()'s verdict, so the table holds the same people
-        # the clustering saw and a bystander never shows up as a stable kit.
-        for det in dets:
-            if det["id"] in assigner.off_pitch:
-                continue
-            sample = assigner.identify_jersey_colour(det, frame)
-            if sample is not None:
-                observations.setdefault(det["id"], []).append(sample)
 
         cam = draw_cam(frame, dets, assigner)
         panel = draw_panel(assigner, observations, idx, cam.shape[0])

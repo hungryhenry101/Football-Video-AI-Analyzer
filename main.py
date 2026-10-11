@@ -8,10 +8,11 @@ from core.broadtrack_calib import BroadTrackCalib
 from core.projection_utils import pixel_to_ground
 from core.player_tracker import PlayerTracker
 from core.ball_tracker import BallTracker, BallDetector
+from core.team_assigner import TeamAssigner
 
 BALL_MODEL_PATH = "models/football_best.pt"
-PLAYER_MODEL_PATH = "models/yolo11m-seg.pt"
-VIDEO_PATH = "input_vids/test2.mp4" # YOUR VIDEO PATH
+PLAYER_MODEL_PATH = "models/yolo11n-seg.pt"
+VIDEO_PATH = "input_vids/test1.mp4" # YOUR VIDEO PATH
 OUTPUT_DIR = "output/"
 
 # BroadTrack's TorchScript detectors. See core/BroadTrack/README.md;
@@ -40,12 +41,13 @@ calib_engine = BroadTrackCalib(
 ball_detector = BallDetector(BALL_MODEL_PATH, device)
 ball_tracker = BallTracker(fps=fps)
 player_tracker = PlayerTracker(PLAYER_MODEL_PATH, device)
+team_assigner = TeamAssigner()
 
 bev_template = calib_engine.create_bev_template()
 bev_canvas_h, bev_canvas_w = bev_template.shape[:2]
 
 # Video Output
-if os.path.exists(OUTPUT_DIR) is False:
+if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 out_cam = cv2.VideoWriter(OUTPUT_DIR + 'cam.mp4', cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
 out_bev = cv2.VideoWriter(OUTPUT_DIR + 'bev.mp4', cv2.VideoWriter_fourcc(*'mp4v'), fps, (bev_canvas_w, bev_canvas_h))
@@ -93,9 +95,7 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
     R = calib["R"]
     t = calib["t"]
 
-    # project detected lines to cam view
-    calib_engine.draw_pitch_lines(cam_canva, color=(0,255,0), thickness=2)
-
+    team_assigner.update(frame, player_dets, K, R, t)
     ball_dets = ball_detector.detect(frame)
 
     # BEV: players via pixel_to_ground (bottom-centre = ground contact point)
@@ -104,7 +104,7 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
         pt = pixel_to_ground(cx, cy, K, R, t)
         if pt is not None:
             px, py = calib_engine.world_to_bev_px(pt[0], pt[1])
-            cv2.circle(bev_canva, (px, py), 4, (255, 0, 0), -1)
+            cv2.circle(bev_canva, (px, py), 4, team_assigner.draw_colour(tid), -1)
 
     # BEV: ball via pixel_to_ground
     ball_candidates = ball_detector.project_to_ground(ball_dets, K, R, t)
@@ -115,8 +115,8 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
         cv2.circle(bev_canva, (px, py), 5, (0, 255, 255), -1) # yellow
 
     # Camera Plane
+    calib_engine.draw_pitch_lines(cam_canva, color=(0,255,0), thickness=2)
     player_tracker.draw_tracks(cam_canva, player_dets)
-
     if ball_dets[0].boxes is not None:
         ball_boxes = ball_dets[0].boxes.xyxy.cpu().numpy()
         for box in ball_boxes:
