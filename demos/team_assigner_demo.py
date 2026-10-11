@@ -26,7 +26,7 @@ from core.player_tracker import PlayerTracker
 from core.projection_utils import pixel_to_ground
 from core.team_assigner import TeamAssigner, lab_to_bgr
 
-PLAYER_MODEL = "models/yolo11m-seg.pt"
+PLAYER_MODEL = "models/yolo11n-seg.pt"
 KEYPOINT_WEIGHTS = "models/nbjw_keypoint_model.pt"
 LINE_WEIGHTS = "models/tvcalib_model.pt"
 
@@ -42,9 +42,9 @@ def swatch(lab, size=44):
 def team_means(assigner):
     """{team label: mean Lab of the players currently on that team}."""
     grouped = {}
-    for tid, assignment in assigner.assignments.items():
-        if assignment["team"] is not None:
-            grouped.setdefault(assignment["team"], []).append(assigner.player_colours[tid])
+    for tid, assignment in assigner.assign_acc.items():
+        if assignment[-1]["team"] is not None:
+            grouped.setdefault(assignment[-1]["team"], []).append(assigner.player_colours[tid])
     return {team: np.mean(cols, axis=0) for team, cols in grouped.items()}
 
 
@@ -57,13 +57,13 @@ def draw_cam(frame, dets, assigner):
         # Bottom-centre is the ground contact point, as on the BEV pane.
         cv2.circle(frame, ((x1 + x2) // 2, y2), 4, colour, -1)
 
-        assignment = assigner.assignments.get(det["id"])
+        assignment = assigner.assign_acc.get(det["id"])
         tag = ""
         if assignment is not None:
-            role = assignment["role"]
+            role = assignment[-1]["role"]
             tag = "" if role == "player" else f" {role[:3].upper()}"
-            if assignment["team"] is not None:
-                tag = f" T{assignment['team']}{tag}"
+            if assignment[-1]["team"] is not None:
+                tag = f" T{assignment[-1]['team']}{tag}"
         elif det["id"] in assigner.off_pitch:
             tag = " OFF"  # dropped this frame: not read, and not in the panel
         cv2.putText(frame, f"#{det['id']}{tag}", (x1, max(14, y1 - 6)), FONT, 0.55, colour, 2)
@@ -77,7 +77,7 @@ def draw_panel(assigner, observations, frame_idx, height):
     y = 46
     for team, mean in sorted(team_means(assigner).items()):
         panel[y : y + 44, 12:56] = swatch(mean)
-        count = sum(1 for a in assigner.assignments.values() if a["team"] == team)
+        count = sum(1 for a in assigner.assign_acc.values() if a[-1]["team"] == team)
         cv2.putText(panel, f"TEAM_{'AB'[team]}  n={count}", (66, y + 28), FONT, 0.5, (235, 235, 235), 1)
         cv2.putText(panel, f"L{mean[0]:.0f} a{mean[1]:.0f} b{mean[2]:.0f}", (66, y + 44), FONT, 0.4, (150, 150, 150), 1)
         y += 60

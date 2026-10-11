@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-from fontTools.ufoLib.glifLib import pointAttributesFormat1
+from collections import deque, defaultdict
 
 from core.projection_utils import pixel_to_ground
 
@@ -48,28 +48,6 @@ PITCH_LENGTH = 105.0
 PITCH_WIDTH = 68.0
 PITCH_MARGIN = 1.0 # margin of pitch when deciding on pitch people
 
-def lab_to_bgr(lab):
-    """The BGR triple a float CIE-Lab colour corresponds to.
-
-    OpenCV's 8-bit Lab: L, a and b all span 0-255, with a = b = 128 neutral.
-    """
-    pixel = np.rint(np.clip(lab, 0, 255)).astype(np.uint8).reshape(1, 1, 3)
-    b, g, r = cv2.cvtColor(pixel, cv2.COLOR_LAB2BGR)[0, 0]
-    return int(b), int(g), int(r)
-
-
-def ground_position(obj, K, R, t):
-    """Bottom-centre of each box on the ground plane, in world metres.
-
-    Bottom-centre because that is where a player meets the pitch.
-    """
-    if K is None or R is None or t is None:
-        return None
-    x1, _, x2, y2 = obj["bbox"]
-    point = pixel_to_ground((x1 + x2) / 2, y2, K, R, t)
-    return float(point[0]), float(point[1])
-
-
 class TeamAssigner:
     """Assign a team and a role to each tracked person.
 
@@ -93,11 +71,15 @@ class TeamAssigner:
             1.0,
         )
 
-        self.player_colours: dict[int, np.ndarray] = {}      # id -> (3,) mean [L, a, b]
-        self.assignments: dict[int, dict] = {}        # id -> {"team", "role"}
         self.team_colours: dict[int, np.ndarray] = {} # team -> (3,) mean [L, a, b]
-        self._acc: dict[int, list] = {}               # id -> [sum of LAB, count]
-        self.off_pitch: set[int] = set()              # ids dropped by the last update()
+        self.colour_acc: dict[int, deque] = defaultdict(lambda: deque(maxlen=20)) # id -> [LAB of each det]
+        self.assign_acc: dict[int, deque] = defaultdict(lambda: deque(maxlen=20)) # id -> [{"team", "role"}]
+        self.off_pitch: set[int] = set() # ids off pitch
+
+    @property
+    def player_colours(self):
+        return {tid: np.mean(np.stack(list(c)), axis=0).astype(np.float32)
+                for tid, c in self.colour_acc.items()}
 
     # ----------------------------------------------------------- the pitch
 
@@ -108,20 +90,11 @@ class TeamAssigner:
         on_pitch, off_pitch = [], set()
         for obj in tracked_objects:
             x1, _, x2, y2 = obj["bbox"]
-            if self._inside_pitch(pixel_to_ground((x1 + x2) / 2, y2, K, R, t)):
+            if self.inside_pitch(pixel_to_ground((x1 + x2) / 2, y2, K, R, t)):
                 on_pitch.append(obj)
             else:
                 off_pitch.add(obj["id"])
         return on_pitch, off_pitch
-
-    @staticmethod
-    def _inside_pitch(point):
-        if point is None:
-            return False
-        return (
-            abs(float(point[0])) <= PITCH_LENGTH / 2 + PITCH_MARGIN
-            and abs(float(point[1])) <= PITCH_WIDTH / 2 + PITCH_MARGIN
-        )
 
     # ---------------------------------------------------------------- stage 1
 
@@ -233,29 +206,6 @@ class TeamAssigner:
 
         return self._kmeans(data, k, attempts=10)
 
-    @staticmethod
-    def _lab_cv2kmeans(colours):
-        """Clustering wants: ``(a, b, L * L_WEIGHT)``"""
-        features = np.empty_like(colours, dtype=np.float32)
-        features[:, 0] = colours[:, 1]             # a
-        features[:, 1] = colours[:, 2]             # b
-        features[:, 2] = colours[:, 0] * L_WEIGHT  # L, weighted
-        return features
-
-    @staticmethod
-    def _sort_label(labels, centres, features):
-        """ kmeans produces random label, so we need to sort it for binding teams.
-            Team A always has lower `a`
-        """
-        keys = []
-        for cluster in range(len(centres)):
-            members = features[labels == cluster]
-            keys.append(tuple(np.median(members, axis=0)) if len(members) else (np.inf,) * 3)
-
-        order = sorted(range(len(centres)), key=lambda cluster: keys[cluster])
-        remap = np.empty(len(order), dtype=int)
-        remap[order] = np.arange(len(order))
-        return remap[labels], centres[order]
 
     # ------------------------------------------------------------- per frame
 
@@ -278,30 +228,19 @@ class TeamAssigner:
             colour = self.identify_jersey_colour(obj, frame)
             if colour is None:
                 continue
-            acc = self._acc.setdefault(obj["id"], [np.zeros(3, np.float64), 0])
-            acc[0] += colour
-            acc[1] += 1
-
-        self.player_colours = {
-            tid: (total / count).astype(np.float32)
-            for tid, (total, count) in self._acc.items()
-        }
-        self.assignments = {}
+            self.colour_acc[obj["id"]].append(colour)
         self.team_colours = {}
 
         ppl_on_pitch = {obj["id"] for obj in on_pitch}
         detected = {obj["id"] for obj in tracked_objects}
         # players detected on-pitch, or not detected in this frame
         ids = [tid for tid in self.player_colours if tid in ppl_on_pitch or tid not in detected]
-
-        # One player is not two teams
-        if len(ids) < 2:
-            return self.assignments
+        if len(ids) < 2: return None # one player only
 
         colours = np.stack([self.player_colours[tid] for tid in ids]) # tid stands for track-id
-        features = self._lab_cv2kmeans(colours)
+        features = self.lab_cv2kmeans(colours)
         labels, centres = self.cluster_colours(features)
-        labels, centres = self._sort_label(labels, centres, features)
+        labels, centres = self.sort_label(labels, centres, features)
 
         dist = np.linalg.norm(features[:, None, :] - centres[None, :, :], axis=2)
         nearest = dist.min(axis=1)
@@ -328,48 +267,99 @@ class TeamAssigner:
 
         for tid, label, dist in zip(ids, labels, nearest):
             if dist <= threshold:
-                self.assignments[tid] = {"team": int(label), "role": PLAYER}
+                self.assign_acc[tid].append({"team": int(label), "role": PLAYER})
                 continue
 
             obj = pitch_obj_map.get(tid)
             if obj is None: # not detected in this frame
                 continue
 
-            outliers[tid] = ground_position(obj, K, R, t)
-
+            outliers[tid] = self.ground_position(obj, K, R, t)
         if outliers:
             goal = np.array([PITCH_LENGTH / 2, 0.0])
 
             gk_id = min(outliers,
                 key=lambda tid: np.linalg.norm(outliers[tid] - goal),
             )
-            self.assignments[gk_id] = {"team": None, "role": GOALKEEPER}
+            self.assign_acc[gk_id].append({"team": None, "role": GOALKEEPER})
 
             for tid in outliers:
                 if tid != gk_id:
-                    self.assignments[tid] = {"team": None, "role": REFEREE}
+                    self.assign_acc[tid].append({"team": None, "role": REFEREE})
 
         # Each team's jersey colour for drawing, remove L's weight
         for team in (TEAM_A, TEAM_B):
             members = [
                 self.player_colours[tid]
-                for tid, a in self.assignments.items()
-                if a["team"] == team
+                for tid, a in self.assign_acc.items()
+                if a[-1]["team"] == team
             ]
             if members:
                 self.team_colours[team] = np.mean(members, axis=0)
-
-        return self.assignments
 
     # ---------------------------------------------------------------- drawing
 
     def draw_colour(self, tid):
         """BGR swatch for a track id. """
-        assignment = self.assignments.get(tid)
+        assignment = self.assign_acc.get(tid)
         if assignment is None:
             return UNKNOWN_COLOUR
-        if assignment["team"] is not None:
-            lab = self.team_colours.get(assignment["team"])
+        if assignment[-1]["team"] is not None:
+            lab = self.team_colours.get(assignment[-1]["team"])
             if lab is not None:
                 return lab_to_bgr(lab)
-        return ROLE_COLOURS.get(assignment["role"], UNKNOWN_COLOUR)
+        return ROLE_COLOURS.get(assignment[-1]["role"], UNKNOWN_COLOUR)
+
+    @staticmethod
+    def ground_position(obj, K, R, t):
+        """Bottom-centre of each box on the ground plane, in world metres.
+
+        Bottom-centre because that is where a player meets the pitch.
+        """
+        if K is None or R is None or t is None:
+            return None
+        x1, _, x2, y2 = obj["bbox"]
+        point = pixel_to_ground((x1 + x2) / 2, y2, K, R, t)
+        return float(point[0]), float(point[1])
+
+    @staticmethod
+    def lab_cv2kmeans(colours):
+        """Clustering ``(a, b, L * L_WEIGHT)``"""
+        features = np.empty_like(colours, dtype=np.float32)
+        features[:, 0] = colours[:, 1]  # a
+        features[:, 1] = colours[:, 2]  # b
+        features[:, 2] = colours[:, 0] * L_WEIGHT  # L, weighted
+        return features
+
+    @staticmethod
+    def sort_label(labels, centres, features):
+        """ kmeans produces random label, so we need to sort it for binding teams.
+            Team A always has lower `a`
+        """
+        keys = []
+        for cluster in range(len(centres)):
+            members = features[labels == cluster]
+            keys.append(tuple(np.median(members, axis=0)) if len(members) else (np.inf,) * 3)
+
+        order = sorted(range(len(centres)), key=lambda cluster: keys[cluster])
+        remap = np.empty(len(order), dtype=int)
+        remap[order] = np.arange(len(order))
+        return remap[labels], centres[order]
+
+    @staticmethod
+    def inside_pitch(point):
+        if point is None:
+            return False
+        return (
+            abs(float(point[0])) <= PITCH_LENGTH / 2 + PITCH_MARGIN
+            and abs(float(point[1])) <= PITCH_WIDTH / 2 + PITCH_MARGIN
+        )
+
+def lab_to_bgr(lab):
+    """The BGR triple a float CIE-Lab colour corresponds to.
+
+    OpenCV's 8-bit Lab: L, a and b all span 0-255, with a = b = 128 neutral.
+    """
+    pixel = np.rint(np.clip(lab, 0, 255)).astype(np.uint8).reshape(1, 1, 3)
+    b, g, r = cv2.cvtColor(pixel, cv2.COLOR_LAB2BGR)[0, 0]
+    return int(b), int(g), int(r)
