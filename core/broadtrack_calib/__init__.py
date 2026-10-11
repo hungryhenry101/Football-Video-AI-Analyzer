@@ -9,9 +9,12 @@ from .calib import (
     pitch_wireframe,
 )
 from .models import KeypointDetectionModel, LineSegmentationModel
+from .smoothing import CalibrationSmoother, pose_from_parameters
 
 __all__ = [
     "BroadTrackCalib",
+    "CalibrationSmoother",
+    "pose_from_parameters",
     "PitchGeometry",
     "KeypointDetectionModel",
     "LineSegmentationModel",

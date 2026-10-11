@@ -8,6 +8,12 @@ regularised by Lucas-Kanade ground correspondences,
 with a line-IoU pan refinement
 and a keypoint-driven re-initialisation when tracking is lost.
 
+On top of that, ``BroadTrackCalib`` can smooth the pose it emits: with
+``smooth_window > 1`` the pan/tilt/roll/focal stream goes through the zero-phase
+filter in :mod:`.smoothing`, which removes the per-frame wander the solver has no
+temporal prior against. That costs lookahead, so the output trails the input by
+``smooth_window // 2`` frames (see ``lag``).
+
 What runs where
 ---------------
 Python
@@ -43,6 +49,7 @@ import numpy as np
 # if Ceres initialises first, libomp aborts.
 # So, DO NOT reorder these two imports.
 from .models import KeypointDetectionModel, LineSegmentationModel, keypoints_to_list
+from .smoothing import CalibrationSmoother
 
 from . import _broadtrack
 
@@ -119,8 +126,12 @@ class BroadTrackCalib:
     """Temporal pitch calibration for a single broadcast camera.
 
     One instance tracks one video stream, frame by frame, in order. Calls are
-    not thread-safe: the tracker's camera, optical-flow points and lost-tracking
-    counter are shared mutable state.
+    not thread-safe: the tracker's camera, optical-flow points, lost-tracking
+    counter and smoothing buffer are shared mutable state.
+
+    With smoothing enabled the instance is also a delay line, so ``estimate``
+    hands back a past frame's calibration and ``flush`` has to be called once
+    the video ends or the last ``lag`` frames are lost.
     """
 
     def __init__(
@@ -134,6 +145,8 @@ class BroadTrackCalib:
         pitch_length: float = PITCH_LENGTH,
         pitch_width: float = PITCH_WIDTH,
         bev_scale: float = 10.0,
+        smooth_window: int = 1,
+        smooth_poly: int = 3,
         line_device: Optional[str] = None,
         keypoint_device: Optional[str] = None,
         tracker_config: Optional[dict] = None,
@@ -150,6 +163,13 @@ class BroadTrackCalib:
                 tracker itself adapts to whatever frame it is handed.
             pitch_length, pitch_width: pitch size in metres, for BEV rendering.
             bev_scale: BEV pixels per metre.
+            smooth_window, smooth_poly: zero-phase smoothing of the camera
+                pose, in frames. ``smooth_window=1`` (the default) disables it
+                and :meth:`estimate` behaves exactly as it always has. Any odd
+                value >= 3 turns it on, and the output is then **delayed** by
+                ``smooth_window // 2`` frames -- see :attr:`lag`. See
+                :mod:`core.broadtrack_calib.smoothing` for why the delay is the
+                price of not lagging a real pan.
             line_device, keypoint_device: per-model device overrides. They
                 default to ``device``. Worth setting apart: the segmentation
                 model is small and runs about as fast on CPU as on MPS, while
@@ -188,12 +208,17 @@ class BroadTrackCalib:
 
         self._last_result: Optional[dict] = None
         self._last_frame_shape: Optional[tuple] = None
+        self._smoother = (
+            CalibrationSmoother(smooth_window, smooth_poly) if smooth_window > 1 else None
+        )
 
+        delay_note = f", output delayed by {self.lag} frames" if self._smoother else ""
         print(
             f"BroadTrackCalib initialized (line model on {self._line_model.device}, "
             f"keypoint model on {self._keypoint_model.device}; expected "
             f"{self.width}x{self.height}, HD reference {config['hd_width']:.0f}x"
-            f"{config['hd_height']:.0f}, position_mode={config.get('position_mode', 'free')})"
+            f"{config['hd_height']:.0f}, position_mode={config.get('position_mode', 'free')}, "
+            f"smooth_window={smooth_window}{delay_note})"
         )
 
     # ------------------------------------------------------------------ core
@@ -217,6 +242,12 @@ class BroadTrackCalib:
             ``focal_length``, ``pan_deg``, ``tilt_deg``, ``roll_deg`` and
             ``line_mask``; or ``None`` if the solve did not produce a usable
             camera.
+
+            With smoothing enabled (``smooth_window > 1``) the returned dict
+            describes the frame ``lag`` back, not the frame just handed in, and
+            the first ``lag`` calls return ``None``. The caller must delay
+            whatever it draws by the same ``lag`` frames -- ``main.py`` does
+            that with a deque, and :meth:`flush` drains the tail at the end.
         """
         if frame is None or frame.ndim != 3 or frame.shape[2] != 3:
             raise ValueError("frame must be an HxWx3 BGR image")
@@ -259,12 +290,33 @@ class BroadTrackCalib:
             "roll_deg": native["roll_deg"],
             "line_mask": line_mask,
         }
-        self._last_result = result
+        if self._smoother is not None:
+            result = self._smoother.push(result)
+        if result is not None:
+            self._last_result = result
         return result
+
+    def flush(self) -> list:
+        """Drain the smoothing delay line, at the end of a video.
+
+        Returns the calibrations still held back -- one entry per leftover
+        frame, in order, ``None`` for a frame whose solve never produced a
+        usable camera. Empty when smoothing is disabled.
+        """
+        if self._smoother is None:
+            return []
+        return self._smoother.flush()
+
+    @property
+    def lag(self) -> int:
+        """Frames the output trails the input by. 0 when smoothing is off."""
+        return 0 if self._smoother is None else self._smoother.lag
 
     def reset(self) -> None:
         """Forget all temporal state. Call this when the video cuts."""
         self._tracker.reset()
+        if self._smoother is not None:
+            self._smoother.reset()
         self._last_result = None
 
     @property
