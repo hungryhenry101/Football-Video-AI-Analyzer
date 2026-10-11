@@ -15,7 +15,7 @@ By this project I have learnt:
  - through Github, AI, Google, papers... 
 
 ### Programming:
- - familiarize with cv2, YOLO, numpy, etc.
+ - familiarise with cv2, YOLO, numpy, etc.
 
 ## To Be Specific:
 
@@ -42,3 +42,6 @@ By this project I have learnt:
  - Bayes: -----!!TODO!!!---
  - rCNN: warp image before processing
  - FPN: detect objects of varying scales
+
+### Team Assigner
+ - RGB vs HSV vs LAB

@@ -2,6 +2,10 @@
 
 This file provides guidance to coding agents when working in this project. To make this file always up-to-date, modify it if major changes are made
 
+## when working with the code
+
+Keep your code comments concise.
+
 ## Project Overview
 
 A research/learning prototype (not production) that ingests a football match video and, frame-by-frame, detects and tracks players, referees, and the ball, then renders a camera view ("cam") and a top-down Bird's Eye View ("bev"). The long-term goal is automatic goalkeeper highlight generation and match analytics — **not yet implemented** (see README TODOs). Everything is orchestrated by `main.py` as a single pass over the video.
@@ -9,7 +13,7 @@ A research/learning prototype (not production) that ingests a football match vid
 ## Running
 
 - activate the `football` conda environment (`conda env create -f environment.yml`; conda-forge, Python 3.12)
-- build the calibration extension:
+- build the calibration extension fist time:
   ```bash
   python scripts/build_minimal_opencv.py   # once, ~20 min
   python scripts/build_minimal_ceres.py    # once, ~5 min
@@ -58,18 +62,10 @@ Read it before touching any projection code.
 - `pixel_to_3d(u,v,bbox_width,K,R,t)` → full 3D position from apparent ball size; **currently unused** but is the planned path for aerial/high balls (see problems.md).
 - `build_projection_matrix` / `project_3d_to_pixel` build and apply `P = K[R | -Rt]`.
 
-## Tests
-
-`python -m pytest tests/ -q`. The geometry and detector-label-map tests always
-run; the end-to-end calibration tests need the BroadTrack TorchScript models and
-`core/BroadTrack/frames/`, and skip when those are absent. When present they are
-regression checks against the scores the upstream C++ binary recorded for the
-same sequence (`core/BroadTrack/out/anchored_pos.json`).
-
 ## Files and Docs
-Don't modify them before asking me or i told you so.
 
 ### under `demos/`
+Demos of core modules.
 
 ### gitignore
 - `output`: folder in root and in test folder

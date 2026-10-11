@@ -4,6 +4,10 @@ Two kinds of test live here. The geometry and label-map tests are free: they
 need nothing but the compiled extension. The end-to-end ones need BroadTrack's
 TorchScript detectors and a frame sequence, both of which are large and
 gitignored, so they skip cleanly when the files are absent.
+
+``requires_models`` and ``requires_sequence`` are not interchangeable: anything
+taking the ``frames`` fixture needs the sequence too, or it gets an empty list
+and fails on ``frames[0]`` instead of skipping.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ if str(REPO_ROOT) not in sys.path:
 BROADTRACK_DIR = REPO_ROOT / "core" / "BroadTrack"
 KEYPOINT_WEIGHTS = REPO_ROOT / "models" / "nbjw_keypoint_model.pt"
 LINE_WEIGHTS = REPO_ROOT / "models" / "tvcalib_model.pt"
-FRAMES_DIR = BROADTRACK_DIR / "frames"
+FRAMES_DIR = BROADTRACK_DIR / "test_data" / "frames"
 REFERENCE_JSON = BROADTRACK_DIR / "out" / "anchored_pos.json"
 
 #: The sequence the reference C++ binary was run on, and the scores it recorded.
