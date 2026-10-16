@@ -6,14 +6,14 @@ import cv2
 from tqdm import tqdm
 import torch
 from core.broadtrack_calib import BroadTrackCalib
-from core.projection_utils import pixel_to_ground
 from core.player_tracker import PlayerTracker
+from core.player_position import PlayerPositionFilter
 from core.ball_tracker import BallTracker, BallDetector
 from core.team_assigner import TeamAssigner
 
 BALL_MODEL_PATH = "models/football_best.pt"
 PLAYER_MODEL_PATH = "models/yolo11n-seg.pt"
-VIDEO_PATH = "input_vids/test1.mp4" # YOUR VIDEO PATH
+VIDEO_PATH = "input_vids/test2.mp4" # YOUR VIDEO PATH
 OUTPUT_DIR = "output/"
 
 # BroadTrack's TorchScript detectors. See core/BroadTrack/README.md;
@@ -50,6 +50,7 @@ calib_engine = BroadTrackCalib(
 ball_detector = BallDetector(BALL_MODEL_PATH, device)
 ball_tracker = BallTracker(fps=fps)
 player_tracker = PlayerTracker(PLAYER_MODEL_PATH, device)
+player_positions = PlayerPositionFilter()
 team_assigner = TeamAssigner()
 
 bev_template = calib_engine.create_bev_template()
@@ -83,15 +84,15 @@ def draw(frame, player_dets, ball_dets, calib):
     R = calib["R"]
     t = calib["t"]
 
-    team_assigner.update(frame, player_dets, K, R, t)
+    # BEV: players via pixel_to_ground (bottom-centre = ground contact point),
+    # filtered per track. Both the dots and the on-pitch verdict use these, so
+    # they cannot disagree about who is on the pitch.
+    positions = player_positions.update(player_dets, K, R, t)
+    team_assigner.update(frame, player_dets, K, R, t, positions=positions)
 
-    # BEV: players via pixel_to_ground (bottom-centre = ground contact point)
-    player_centers = player_tracker.get_player_centers(player_dets)
-    for tid, (cx, cy) in player_centers.items():
-        pt = pixel_to_ground(cx, cy, K, R, t)
-        if pt is not None:
-            px, py = calib_engine.world_to_bev_px(pt[0], pt[1])
-            cv2.circle(bev_canva, (px, py), 4, team_assigner.draw_colour(tid), -1)
+    for tid, (x, y) in positions.items():
+        px, py = calib_engine.world_to_bev_px(x, y)
+        cv2.circle(bev_canva, (px, py), 4, team_assigner.draw_colour(tid), -1)
 
     # BEV: ball via pixel_to_ground
     ball_candidates = ball_detector.project_to_ground(ball_dets, K, R, t)

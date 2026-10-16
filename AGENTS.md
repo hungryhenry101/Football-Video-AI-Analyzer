@@ -59,6 +59,8 @@ pixels (pitch is 105×68 m, origin at center, `bev_scale = 10 px/m`), and
 ### 2. Player tracking — `core/player_tracker.py`
 `PlayerTracker` wraps a YOLO model (`model.track(..., tracker="config/botsort.yaml")`) giving BoT-SORT (handles GMC, ReID, Kalman). `update(frame)` returns a list of dicts `{id, bbox, cls, conf}` (classes: 0=ball, 1=goalkeeper, 2=player, 3=referee). In `main.py` it runs *before* the calibration so its boxes can be handed to BroadTrack as its `human-bboxes` input.
 
+Turning a detection into a pitch position is `core/player_position.py`: `foot_point` is the box's float bottom-centre, and `PlayerPositionFilter` Kalman-filters each track's world position. The projection magnifies a pixel of foot jitter into 0.12 m at the near touchline and 0.61 m at the far goal line, so the filtering happens *after* projection, and both the BEV dots and `TeamAssigner`'s on-pitch verdict use the filtered point — the mask-based foot points that look more precise were measured to be worse (see that module's docstring).
+
 ### 3. Ball tracking — `core/ball_tracker.py`
 `BallDetector` (YOLO, class 0 only) produces pixel detections; `project_to_ground()` uses the camera model to lift them to ground-plane world coords. `BallTracker` (a `filterpy` Kalman filter, state `[x, y, vx, vy]` in BEV meters) selects the best candidate each frame via **Mahalanobis-distance gating with a Chi-Square threshold** (`chi2.ppf(0.95, df=2)`), then smooths and predicts to ride through occlusions.
 

@@ -24,6 +24,7 @@ from collections import deque, defaultdict, Counter
 from typing import NamedTuple
 
 from core.projection_utils import pixel_to_ground
+from core.player_position import foot_point
 
 TEAM_A = 0
 TEAM_B = 1
@@ -90,14 +91,13 @@ class TeamAssigner:
 
     # ----------------------------------------------------------- the pitch
 
-    def filter_on_pitch(self, tracked_objects, K=None, R=None, t=None):
-        if K is None or R is None or t is None:
+    def filter_on_pitch(self, tracked_objects, K=None, R=None, t=None, positions=None):
+        if positions is None and (K is None or R is None or t is None):
             return list(tracked_objects), set()
 
         on_pitch, off_pitch = [], set()
         for obj in tracked_objects:
-            x1, _, x2, y2 = obj["bbox"]
-            if self.inside_pitch(pixel_to_ground((x1 + x2) / 2, y2, K, R, t)):
+            if self.inside_pitch(self.ground_position(obj, K, R, t, positions)):
                 on_pitch.append(obj)
             else:
                 off_pitch.add(obj["id"])
@@ -215,7 +215,7 @@ class TeamAssigner:
 
     # ------------------------------------------------------------- per frame
 
-    def update(self, frame, tracked_objects, K=None, R=None, t=None):
+    def update(self, frame, tracked_objects, K=None, R=None, t=None, positions=None):
         """With history data and new detections, re-cluster every known player.
         So it can handle players that are occluded or motion-blurred.
         Only deal with people on pitch — ``filter_on_pitch`` runs first
@@ -224,11 +224,16 @@ class TeamAssigner:
             frame: current frame
             tracked_objects: as returned by ``PlayerTracker.update``.
             K, R, t: pitch calibration, for position information
+            positions: ``{id: (x, y)}`` world metres, already filtered. When
+                given it is used instead of projecting the raw boxes, so the
+                verdict here matches the BEV the caller draws.
 
         Returns:
             ``{id: {"team": TEAM_A | TEAM_B | None, "role": str}}``
         """
-        on_pitch, self.off_pitch = self.filter_on_pitch(tracked_objects, K, R, t)
+        on_pitch, self.off_pitch = self.filter_on_pitch(
+            tracked_objects, K, R, t, positions
+        )
 
         for obj in on_pitch:
             colour = self.identify_jersey_colour(obj, frame)
@@ -286,7 +291,9 @@ class TeamAssigner:
             if obj is None: # not detected in this frame
                 continue
 
-            outliers[tid] = self.ground_position(obj, K, R, t)
+            position = self.ground_position(obj, K, R, t, positions)
+            if position is not None:  # the ray can miss the ground plane
+                outliers[tid] = position
         if outliers:
             goal = np.array([PITCH_LENGTH / 2, 0.0])
 
@@ -329,15 +336,26 @@ class TeamAssigner:
         return ROLE_COLOURS.get(assignment.role, UNKNOWN_COLOUR)
 
     @staticmethod
-    def ground_position(obj, K, R, t):
+    def ground_position(obj, K, R, t, positions=None):
         """Bottom-centre of each box on the ground plane, in world metres.
 
         Bottom-centre because that is where a player meets the pitch.
+
+        ``positions`` (from ``core.player_position.PlayerPositionFilter``) is the
+        same point after temporal filtering. Prefer it when available: the raw
+        box moves the ground point by up to 0.6 m per pixel at the far goal
+        line, and ``inside_pitch`` judges against a +/-1 m margin, so an
+        unfiltered foot flips players across the touchline frame by frame.
         """
+        if positions is not None:
+            point = positions.get(obj["id"])
+            if point is not None:
+                return float(point[0]), float(point[1])
         if K is None or R is None or t is None:
             return None
-        x1, _, x2, y2 = obj["bbox"]
-        point = pixel_to_ground((x1 + x2) / 2, y2, K, R, t)
+        point = pixel_to_ground(*foot_point(obj), K, R, t)
+        if point is None:
+            return None
         return float(point[0]), float(point[1])
 
     @staticmethod

@@ -8,6 +8,7 @@ from ultralytics import YOLO
 import cv2
 import numpy as np
 from core.projection_utils import pixel_to_ground
+from core.player_position import foot_point
 
 # person id in COCO
 PERSON_CLASS = 0
@@ -115,12 +116,8 @@ class PlayerTracker:
 
     def get_player_centers(self, tracked_objects):
         """get bottom-centre points (for homography projection)"""
-        centers = {}
-        for obj in tracked_objects:
-            x1, y1, x2, y2 = obj["bbox"]
-            # We use bottom-center because that's where the player touches the pitch
-            centers[obj["id"]] = (int((x1 + x2) / 2), int(y2))
-        return centers
+        # Same point the BEV and the on-pitch filter use; see core.player_position.
+        return {obj["id"]: foot_point(obj) for obj in tracked_objects}
 
     def draw_tracks(self, frame, tracked_objects):
         for obj in tracked_objects:
