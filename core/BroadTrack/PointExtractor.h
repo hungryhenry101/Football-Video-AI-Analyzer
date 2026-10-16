@@ -28,19 +28,25 @@
 
 #include <opencv2/opencv.hpp>
 
-#include <vector>
 #include <map>
+#include <random>
+#include <vector>
 
 class PointExtractor
 {
 public:
-    PointExtractor(double minSupport, int pointRadius) : _minSupport(
-                                                             minSupport),
-                                                         _radius(pointRadius),
-                                                         _scaling(1.),
-                                                         _hasRun(false),
-                                                         _currMask(),
-                                                         _points() {};
+    // `seed` is fixed rather than drawn from std::random_device so that two runs
+    // over the same clip calibrate identically. See run().
+    PointExtractor(double minSupport, int pointRadius, unsigned int seed = 1337)
+        : _points(),
+          _currMask(),
+          _scaling(1.),
+          _radius(pointRadius),
+          _baseRadius(pointRadius),
+          _minSupport(minSupport),
+          _hasRun(false),
+          _lastMaskSize(),
+          _generator(seed) {};
 
     void setMask(const cv::Mat &mask);
 
@@ -51,10 +57,20 @@ public:
 private:
     cv::Point2d getSupportCenter(cv::Point2d initialPoint, cv::Mat &img);
 
+    // The extracted points, in *mask* coordinates. getExtractedPoints scales
+    // them into the 540-row reference space on the way out; run() needs them
+    // unscaled so it can match them against the next frame's mask.
     std::map<int, std::vector<cv::Point>> _points;
     cv::Mat _currMask;
     double _scaling;
     int _radius;
+    // The radius the constructor was given, in the 540-row reference space.
+    // _radius is this mapped into the current mask's resolution.
+    int _baseRadius;
     double _minSupport;
     bool _hasRun;
+    // The size of the mask _points came from. A different size is a different
+    // coordinate space, so _points cannot be reused against it.
+    cv::Size _lastMaskSize;
+    std::mt19937 _generator;
 };

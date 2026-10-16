@@ -26,17 +26,34 @@
 
 
 #include "PointExtractor.h"
-#include <random>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
 
 void PointExtractor::setMask(const cv::Mat &mask)
 {
     _currMask = mask.clone();
-    if (_scaling == 1. && mask.rows != 540)
+
+    // The 540-row reference space the points are reported in (see
+    // getExtractedPoints) and the support radius mapped into the mask's own
+    // resolution. Re-derived from _baseRadius whenever the size changes, rather
+    // than once behind a `_scaling == 1.` guard that could never fire twice.
+    const double scaling = 540. / mask.rows;
+    if (scaling != _scaling)
     {
-        _scaling = 540. / mask.rows;
-        _radius = round(_radius / _scaling);
-        std::cout << "Changed support radius to " << _radius << std::endl;
+        _scaling = scaling;
+        _radius = std::max(1, static_cast<int>(std::lround(_baseRadius / _scaling)));
     }
+
+    // A mask of a different size is a different coordinate space: the points
+    // kept from the previous frame would index it out of bounds. Drop them and
+    // re-seed at random instead.
+    if (_lastMaskSize != mask.size())
+    {
+        _points.clear();
+    }
+    _lastMaskSize = mask.size();
 
     _hasRun = false;
 }
@@ -54,7 +71,11 @@ void PointExtractor::run()
     min = 100;
     cv::Range range(min, max + 1);
 
-    std::mt19937 generator{std::random_device{}()};
+    // Carrying the previous frame's points over is what ties the per-frame
+    // residuals together in time, and it is the default. Read per call, like
+    // BROADTRACK_NO_PAN_REFINEMENT, so it can be toggled from a test.
+    const bool reusePoints = std::getenv("BROADTRACK_NO_POINT_REUSE") == nullptr;
+
     std::map<int, std::vector<cv::Point>> new_points;
 
     for (int r = range.start; r < range.end; r++)
@@ -72,13 +93,14 @@ void PointExtractor::run()
 
         std::vector<cv::Point> previous_points;
 
-        // Reuse of the previous frame's points is only valid when the points
-        // are in the same coordinate space as the current mask. When the mask
-        // is not 540 rows tall the extracted points are stored scaled by
-        // _scaling (see the end of run()), so reusing them against the
-        // unscaled mask would index out of bounds (and silently corrupt the
-        // extraction in NDEBUG builds). Fall back to the random-seed path.
-        if (_scaling == 1. && _points.find(r) != _points.end() && !_points.at(r).empty())
+        // Start from where the previous frame found this line and let the mean
+        // shift below pull each point back onto the current mask. _points is in
+        // mask coordinates precisely so this works at any mask resolution --
+        // the old `_scaling == 1.` guard here disabled reuse for every mask
+        // that was not 540 rows tall, which is all of them (the segmentation
+        // model's output is 256 rows), so every frame re-drew its sample
+        // positions at random.
+        if (reusePoints && _points.find(r) != _points.end() && !_points.at(r).empty())
         {
             previous_points = std::vector<cv::Point>(_points.at(r));
         }
@@ -106,7 +128,7 @@ void PointExtractor::run()
                 std::discrete_distribution<int> distribution(weights.begin(),
                                                              weights.end());
 
-                int pick = distribution(generator);
+                int pick = distribution(_generator);
                 candidate = cv::Point2d(points[pick].x, points[pick].y);
                 picked = cv::Point(points[pick]);
             }
@@ -144,17 +166,8 @@ void PointExtractor::run()
         }
         new_points.insert(std::pair<int, std::vector<cv::Point>>(r, finalPoints));
     }
+    // Kept in mask coordinates; getExtractedPoints does the scaling out.
     _hasRun = true;
-    if (_scaling != 1.)
-    {
-        for (auto &pointsId2Vector : new_points)
-        {
-            for (auto &point : pointsId2Vector.second)
-            {
-                point *= _scaling;
-            }
-        }
-    }
     _points = new_points;
 }
 
@@ -164,6 +177,16 @@ void PointExtractor::getExtractedPoints(
     if (!_hasRun && !_currMask.empty())
         run();
     map = _points;
+    if (_scaling != 1.)
+    {
+        for (auto &pointsId2Vector : map)
+        {
+            for (auto &point : pointsId2Vector.second)
+            {
+                point *= _scaling;
+            }
+        }
+    }
 }
 
 cv::Point2d

@@ -22,7 +22,21 @@
 part of BroadTrack that `main.py` uses. It runs BroadTrack's temporal camera
 tracker — a per-frame Ceres bundle adjustment over segmented pitch lines,
 regularised by Lucas-Kanade ground correspondences, with a line-IoU pan
-refinement, a tripod position anchor and keypoint-driven re-initialisation.
+refinement, a tripod position anchor, keypoint-driven re-initialisation and
+sample points carried over from the previous frame.
+
+Those last few are local changes to the vendored sources, not upstream's. The
+carry-over is worth knowing about: `PointExtractor` is the only thing that turns
+the segmentation mask into the solver's input, and upstream's loop for reusing
+the previous frame's points never ran — the points were stored already scaled
+into its 540-row reference space, so the `_scaling == 1.` guard in front of the
+reuse was false for every mask (the segmentation model's output is 256 rows).
+Every frame therefore re-drew its sample positions at random. Carrying them over
+instead — which is all the fix does — drops the frame-to-frame jitter (second
+difference) of the solve from 0.039 to 0.029 deg of pan, 0.056 to 0.018 deg of
+roll and 2.5 to 0.8 px of focal, and the same jitter of a fixed image point by
+2.0-2.4x everywhere across the pitch. `BROADTRACK_NO_POINT_REUSE=1` restores the
+old behaviour.
 
 ```python
 from core.broadtrack_calib import BroadTrackCalib
