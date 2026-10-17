@@ -66,11 +66,11 @@ coordinate frame, same drawing helpers. See
 
 > The test video clips are under `input_vids/`.
 
-1. Prepare detection model for ball & player：Download dataset from [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
-and train it (YOLO11 is used in demonstration). Put the trained weights file to the `models` folder, and edit the path of weight file in `main.py`
-1. Download BroadTrack's two TorchScript detectors — `nbjw_keypoint_model.pt` and `tvcalib_model.pt` from 
+1. Download the player segmentation model [yolo11n-seg](https://huggingface.co/Ultralytics/YOLO11/tree/main)
+2. Download the ball model [yolo-sn-ball](https://github.com/mguti97/SoccerNet-v3D/releases/tag/v1.0.0)
+3. Download BroadTrack's two TorchScript detectors — `nbjw_keypoint_model.pt` and `tvcalib_model.pt` from 
 [github](https://github.com/evs-broadcast/BroadTrack/tree/main/models). Place them in `models/`
-1. Create the environment and build the calibration extension:
+4. Create the environment and build the calibration extension:
    ```bash
    conda env create -f environment.yml && conda activate football
    python scripts/build_minimal_opencv.py   # once, ~20 min
@@ -84,8 +84,8 @@ and train it (YOLO11 is used in demonstration). Put the trained weights file to 
    [`core/BroadTrack/README.md`](core/BroadTrack/README.md). On Linux
    you also need RapidJSON and Boost headers, plus `metis` for Ceres.
 
-1. Update the weight paths and `VIDEO_PATH` in `main.py` with your file paths.
-1. Run `main.py`: View of camera and BEV will show up
+5. Update the weight paths and `VIDEO_PATH` in `main.py` with your file paths.
+6. Run `main.py`: View of camera and BEV will show up
 ---
 
 ## TODO

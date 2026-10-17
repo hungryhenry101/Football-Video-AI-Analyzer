@@ -10,9 +10,9 @@ from core.player_tracker import PlayerTracker
 from core.ball_tracker import BallTracker, BallDetector
 from core.team_assigner import TeamAssigner
 
-BALL_MODEL_PATH = "models/football_best.pt"
+BALL_MODEL_PATH = "models/yolo-sn-ball.pt"
 PLAYER_MODEL_PATH = "models/yolo11n-seg.pt"
-VIDEO_PATH = "input_vids/test1.mp4" # YOUR VIDEO PATH
+VIDEO_PATH = "input_vids/test2.mp4" # YOUR VIDEO PATH
 OUTPUT_DIR = "output/"
 
 # BroadTrack's TorchScript detectors. See core/BroadTrack/README.md;

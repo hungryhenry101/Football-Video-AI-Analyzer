@@ -63,11 +63,11 @@ Lucas-Kanade 光流关联都留在 C++，两个检测网络则复用进程中已
 
 > 测试比赛视频已内置于 `input_vids/` 中
 
-1. 准备足球和球员的检测模型：从 [roboflow](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc) 
-下载数据集并训练（仅测试过 YOLO11）。将训练好的权重文件放入 `models` 文件夹，并在 `main.py` 中更改模型路径
-1. 从 [github](https://github.com/evs-broadcast/BroadTrack/tree/main/models) 下载 BroadTrack 的两个 TorchScript 检测模型
+1. 下载[yolo11n-seg](https://huggingface.co/Ultralytics/YOLO11/tree/main) 球员分割模型
+2. 下载足球模型：[yolo-sn-ball](https://github.com/mguti97/SoccerNet-v3D/releases/tag/v1.0.0)
+3. 从 [github](https://github.com/evs-broadcast/BroadTrack/tree/main/models) 下载 BroadTrack 的两个 TorchScript 检测模型
 —— `nbjw_keypoint_model.pt` 与 `tvcalib_model.pt`。放入 `models/`
-1. 创建环境并构建标定扩展：
+4. 创建环境并构建标定扩展：
    ```bash
    conda env create -f environment.yml && conda activate football
    python scripts/build_minimal_opencv.py   # 只需一次，约 20 分钟
@@ -80,8 +80,8 @@ Lucas-Kanade 光流关联都留在 C++，两个检测网络则复用进程中已
    [`core/BroadTrack/README.md`](core/BroadTrack/README.md)。
    Linux 上还需要 RapidJSON 与 Boost 头文件，以及 Ceres 依赖的 `metis`。
 
-1. 在 main.py 中修改几个 weight 路径和 `VIDEO_PATH` 为你的文件路径
-1. 运行 main.py，弹出 cam视角、bev视角 窗口
+5. 在 main.py 中修改几个 weight 路径和 `VIDEO_PATH` 为你的文件路径
+6. 运行 main.py，弹出 cam视角、bev视角 窗口
 
 ---
 

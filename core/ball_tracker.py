@@ -15,7 +15,7 @@ class BallDetector:
             frame,
             conf=0.15,
             iou=0.45,
-            imgsz=960,
+            imgsz=1280,
             classes=[0],
             device=self.device,
             verbose=False
