@@ -12,6 +12,7 @@ A research/learning prototype (not production) that ingests a football match vid
 
 ## Running
 
+### For the first time
 - activate the `football` conda environment (`conda env create -f environment.yml`; conda-forge, Python 3.12)
 - build the calibration extension fist time:
   ```bash
@@ -19,11 +20,10 @@ A research/learning prototype (not production) that ingests a football match vid
   python scripts/build_minimal_ceres.py    # once, ~5 min
   python scripts/build_native.py           # rerun after any C++ change
   ```
-  OpenCV and Ceres are compiled locally, not taken from a package manager: every
-  packaged build of either links a second OpenMP runtime, and PyTorch's wheel
-  already ships one, which makes libomp abort the interpreter on import. Reasons
-  and trade-offs in `core/BroadTrack/README.md`. `build_native.py` falls
-  back to the system libraries (with a warning) if they are absent.
+  OpenCV and Ceres are compiled locally, not taken from a package manager: Reasons and trade-offs in `core/BroadTrack/README.md`
+
+### After that
+- run the pipeline: `python main.py --video input_vids/test2.mp4 --max-frames 200 --no-display`
 
 ## Architecture
 
@@ -53,7 +53,20 @@ pixels (pitch is 105×68 m, origin at center, `bev_scale = 10 px/m`), and
 `PlayerTracker` wraps a YOLO model (`model.track(..., tracker="config/botsort.yaml")`) giving BoT-SORT (handles GMC, ReID, Kalman). `update(frame)` returns a list of dicts `{id, bbox, cls, conf}` (classes: 0=ball, 1=goalkeeper, 2=player, 3=referee). In `main.py` it runs *before* the calibration so its boxes can be handed to BroadTrack as its `human-bboxes` input.
 
 ### 3. Ball tracking — `core/ball_tracker.py`
-`BallDetector` (YOLO, class 0 only) produces pixel detections; `project_to_ground()` uses the camera model to lift them to ground-plane world coords. `BallTracker` (a `filterpy` Kalman filter, state `[x, y, vx, vy]` in BEV meters) selects the best candidate each frame via **Mahalanobis-distance gating with a Chi-Square threshold** (`chi2.ppf(0.95, df=2)`), then smooths and predicts to ride through occlusions.
+`BallDetector` (YOLO, class 0 only) produces pixel detections; `get_candidates()` returns `BallCandidate`s that carry both the pixel box and the ground-plane BEV position (`pixel_to_ground`), plus a diagnostic-only `z_est` from `pixel_to_3d`.
+
+`BallTracker` is a `filterpy` Kalman filter (`[x, y, vx, vy]` in BEV metres) driven by counters only: `miss_count` (frames since the last accepted measurement), `reject_count` (consecutive frames with plausible candidates but none through the gate) and `reacq_count` (consecutive candidates near the confirmation anchor). State is derived once per frame at the end, and the KF predicts exactly once per frame:
+
+| state | meaning | output |
+|---|---|---|
+| `TENTATIVE` | no track yet; needs `reacquire_confirm` consecutive candidates | `None` until confirmed |
+| `TRACKING` | measurement accepted this frame | position |
+| `OCCLUDED` | `1 <= miss_count < N_occ`; predict only | predicted position (drawn hollow) |
+| `LOST` | `miss_count >= N_occ`; prediction stops after `N_drop` | `None` |
+
+Association has two tiers. Tier 1 is the Chi-Square test (`chi2.ppf(chi2_thres, df=2)`) capped at `gate_max_m` and updates the KF directly. Tier 2 is a **physical** bound — `ball_max_speed_mps × time since the last update + gate_margin_m` — and is what keeps a correctly detected fast ball alive after the filter has coasted; tier-2 candidates never update the filter directly and must pass the reacquisition confirmation. `BallTrackerConfig` holds every tunable, including the process noise (`process_noise_xy`, `process_noise_v`), which must be sized for a kicked ball rather than a pedestrian.
+
+Candidate filtering is always-on for projection, pitch bounds and bbox shape. **Static pitch marks and player foot bands only gate new tracks** (`TENTATIVE`, `LOST`) and tier-2 recovery candidates; a tier-1 candidate that is consistent with the prediction is never discarded by them. This matters: a ball at a player's feet sits on the prediction, and filtering it there cost 14 frames of track in the test clip. Reacquisition arms after `reacquire_after` frames since the last update, needs `reacquire_confirm` candidates (allowed up to `reacquire_confirm_window` frames apart, so detector dropouts do not reset the run), and hard-resets the KF.
 
 ### Coordinate systems & projection — `core/projection_utils.py`
 Read it before touching any projection code.
