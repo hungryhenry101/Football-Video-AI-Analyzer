@@ -1,53 +1,11 @@
-"""Where a tracked player stands: the foot point and its temporal filter.
-
-A player's position on the pitch is read off the frame every frame, and the
-pitch position is what the BEV draws and what the on-pitch filter judges. Both
-steps used to be done inline, in three places, from the raw detection.
-
-Foot point
-----------
-The bottom-centre of the bounding box, in float. The obvious alternative -- the
-lowest pixel of the segmentation mask -- is *worse*, measured against real
-detections on ``input_vids/test1.mp4`` with the camera frozen so it cannot
-contribute: the mask bottom moved 0.170 m per frame against the box bottom's
-0.148 m, and put 8.6% of its steps past the 0.32 m/frame a human can run
-against 6.2%. YOLO's box is a regression-head output and is smooth; the mask
-bottom is a thresholded contour, where one stray pixel moves the foot by a
-whole row -- 0.6 m at the far goal line. So the box stays, minus the ``int()``
-truncation, which only cost half a pixel of quantisation.
-
-Filter
-------
-A per-track constant-velocity Kalman filter over the world position. Filtering
-in world metres rather than in pixels is deliberate: the projection magnifies a
-pixel of foot jitter into 0.12 m at the near touchline and 0.61 m at the far
-goal line, and this is the only stage that sees that magnification. Measured on
-the same 200 frames it cuts the frame-to-frame jitter (mean |second difference|
-of the BEV position) from 0.148 m to 0.084 m, and the share of steps that are
-physically impossible from 6.2% to 3.0%.
-
-The filter is causal on purpose. A centred window is a little better again
-(centred median-3: 0.105 m) but needs lookahead, and every causal alternative
-that smooths harder pays in lag: on a clean 7 m/s run EMA(0.5) sits 0.276 m
-behind the player and EMA(0.3) 0.638 m, which is the size of the jitter being
-removed -- except that a lag is a bias and does not average out. The
-constant-velocity model tracks the same run to 0.008 m.
-
-``process_noise`` and ``measurement_noise`` come from a sweep over both the real
-detections and the clean-motion reference: 0.05 / 0.25 is the knee, and 0.25 m²
-(0.5 m) is also about the measured p90 frame-to-frame step, so it is not an
-arbitrary number.
-
-An innovation gate was tried and dropped: at chi-square 0.99 it rejected 1
-sample in 4574 and changed the jitter by 0.0006 m. The linear update already
-handles this noise, and a gate is one more thing that can reject a genuine
-sprint.
+"""
+Foot point: the box's float bottom-centre, not the mask's lowest pixel
+KF: a per-track constant-velocity Kalman filter over the world position after projection.
 """
 
 from __future__ import annotations
 
 from typing import NamedTuple
-
 import numpy as np
 
 from core.projection_utils import pixel_to_ground
@@ -65,8 +23,7 @@ _OBSERVATION = np.array([[1.0, 0.0, 0.0, 0.0],
 
 
 class _Track(NamedTuple):
-    """One player's filter state, plus how long since they were last detected."""
-
+    """One player's filter state, and how long since they were last detected."""
     state: np.ndarray
     covariance: np.ndarray
     missing: int
@@ -75,13 +32,8 @@ class _Track(NamedTuple):
 def foot_point(obj) -> tuple:
     """Ground-contact pixel of a detection: the bottom-centre of its box.
 
-    Float, not int: the box bottom is already a continuous coordinate, and
-    truncating it to a pixel index throws away half a pixel for nothing. At the
-    far goal line half a pixel is 0.3 m.
-
     Args:
-        obj: one entry of ``PlayerTracker.update``'s return value.
-
+        obj: ``PlayerTracker.update``'s return value.
     Returns:
         ``(u, v)`` in frame pixels.
     """
@@ -92,18 +44,11 @@ def foot_point(obj) -> tuple:
 class PlayerPositionFilter:
     """Per-track Kalman filter over players' BEV positions.
 
-    One instance handles one continuous shot; :meth:`reset` on a video cut.
-    :meth:`update` must be called exactly once per frame, in order.
-
     Args:
         process_noise: variance added to every state each frame.
-        measurement_noise: variance of the ground position a detection implies,
-            in m². 0.25 (0.5 m) matches the measured p90 frame-to-frame step.
-        initial_covariance: state covariance a track starts with. Loose on
-            purpose, so a new track follows its first detections rather than
-            the zero velocity it is initialised with.
-        max_coast: frames a track may go undetected before it is forgotten.
-            BoT-SORT keeps track ids through roughly this much occlusion.
+        measurement_noise: variance of the ground position a detection has, in m².
+        initial_covariance: initial state covariance, loose on purpose
+        max_coast: frames a track may go undetected before it is forgotten
     """
 
     def __init__(
@@ -124,17 +69,11 @@ class PlayerPositionFilter:
 
     def update(self, tracked_objects, K, R, t) -> dict:
         """Filter this frame's detections into BEV positions.
-
         Args:
             tracked_objects: as returned by ``PlayerTracker.update``.
             K, R, t: the calibration for *this* frame.
-
         Returns:
-            ``{track_id: (x, y)}`` in world metres, for the tracks detected on
-            this frame only. A track that was not detected keeps its (coasting)
-            state for the next frame but is not reported -- the caller draws
-            what the detector saw, and a coasted prediction would be a position
-            with nothing on screen to justify it.
+            ``{track_id: (x, y)}`` in world metres, for the tracks detected on this frame only.
         """
         measured = {}
         for obj in tracked_objects:

@@ -7,8 +7,6 @@ Will be used for colour clustering in downstream.
 from ultralytics import YOLO
 import cv2
 import numpy as np
-from core.projection_utils import pixel_to_ground
-from core.player_position import foot_point
 
 # person id in COCO
 PERSON_CLASS = 0
@@ -102,27 +100,9 @@ class PlayerTracker:
             cv2.fillPoly(mask, [shifted.astype(np.int32)], 1)
         return bbox, mask
 
-    def project_to_pitch(self, tracked_objects, K, R, t):
-        if tracked_objects is None or K is None or R is None or t is None:
-            return []
-        players_xy = self.get_player_centers(tracked_objects)
-        out_bev_players = []
-        for x, y in players_xy.values():
-            # full P instead of H
-            pt = pixel_to_ground(x, y, K, R, t)
-            if pt is not None:
-                out_bev_players.append(np.array([pt[0], pt[1], 1.0]))
-        return out_bev_players
-
-    def get_player_centers(self, tracked_objects):
-        """get bottom-centre points (for homography projection)"""
-        # Same point the BEV and the on-pitch filter use; see core.player_position.
-        return {obj["id"]: foot_point(obj) for obj in tracked_objects}
-
     def draw_tracks(self, frame, tracked_objects):
         for obj in tracked_objects:
             x1, y1, x2, y2 = map(int, obj["bbox"])
-
             cls = obj["cls"]
             conf = obj["conf"]
             tid = obj["id"]

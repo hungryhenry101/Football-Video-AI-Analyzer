@@ -1,19 +1,13 @@
 """Cluster tracked people into 2 teams + referee and goalkeepers
 
-Input is the return of ``PlayerTracker.update`` — ``[{id, bbox, cls, conf, mask}]``
-where ``mask`` is a 0/1 raster local to ``bbox``
+Input the return of ``PlayerTracker.update``: [{id, bbox, cls, conf, mask}]
 
 Two stages:
 1. ``identify_jersey_colour`` extract a single colour from every mask
 2. ``cluster_colours`` finds the two teams among those per-player colours
 
-Only deal with people standing on the pitch — see ``filter_on_pitch``.
-
-Colour is in CIE-Lab. Clustering uses ``a``/``b`` plus ``L`` at a third of its
-scale. Chroma identifies a kit; ``L`` is what separates a black shirt from a
-white one — and a referee from a white-shirted team — because both are
-achromatic and share the same ``a``/``b``. ``L`` enters muted rather than raw
-because it also swings with sun and shadow across the pitch.
+Only deal with people standing on the pitch — see ``filter_on_pitch``;
+Colour is in CIE-Lab. Clustering uses ``a``/``b`` plus ``L`` with weight.
 """
 
 from __future__ import annotations

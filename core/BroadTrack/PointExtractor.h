@@ -35,7 +35,7 @@
 class PointExtractor
 {
 public:
-    // `seed` is fixed rather than drawn from std::random_device so that two runs
+    // `seed` is fixed rather than std::random_device so that two runs
     // over the same clip calibrate identically. See run().
     PointExtractor(double minSupport, int pointRadius, unsigned int seed = 1337)
         : _points(),

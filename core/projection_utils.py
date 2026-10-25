@@ -1,5 +1,5 @@
 """
-3D ray casting and projection utilities for camera-based ball tracking.
+3D ray casting and projection utils
 
 Provides the bridge between 2D image pixel coordinates and 3D world coordinates
 using a full pinhole camera model (intrinsics K, rotation R, position t).
@@ -159,13 +159,3 @@ def project_3d_to_pixel(points_3d, K, R, t):
     if pixels.shape[0] == 1:
         return pixels[0]
     return pixels
-
-
-def build_projection_matrix(K, R, t):
-    """Build the 3×4 camera projection matrix P = K [R | -R t].
-
-    Maps homogeneous world coordinates [X, Y, Z, 1]^T to image pixels.
-    """
-    It = np.eye(4, dtype=np.float64)[:3]
-    It[:, 3] = -np.asarray(t, dtype=np.float64)
-    return K @ (np.asarray(R, dtype=np.float64) @ It)

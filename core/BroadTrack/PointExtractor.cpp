@@ -28,17 +28,13 @@
 #include "PointExtractor.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdlib>
 
 void PointExtractor::setMask(const cv::Mat &mask)
 {
     _currMask = mask.clone();
 
-    // The 540-row reference space the points are reported in (see
-    // getExtractedPoints) and the support radius mapped into the mask's own
-    // resolution. Re-derived from _baseRadius whenever the size changes, rather
-    // than once behind a `_scaling == 1.` guard that could never fire twice.
+    // recalc if scale is changed
     const double scaling = 540. / mask.rows;
     if (scaling != _scaling)
     {
@@ -46,9 +42,7 @@ void PointExtractor::setMask(const cv::Mat &mask)
         _radius = std::max(1, static_cast<int>(std::lround(_baseRadius / _scaling)));
     }
 
-    // A mask of a different size is a different coordinate space: the points
-    // kept from the previous frame would index it out of bounds. Drop them and
-    // re-seed at random instead.
+    // for mask with different size, drop and reseed
     if (_lastMaskSize != mask.size())
     {
         _points.clear();
@@ -63,7 +57,6 @@ void PointExtractor::run()
     if (_hasRun || _currMask.empty())
         return;
 
-    cv::Mat idx;
     double min;
     double max;
     cv::minMaxLoc(_currMask, &min, &max);
@@ -71,9 +64,6 @@ void PointExtractor::run()
     min = 100;
     cv::Range range(min, max + 1);
 
-    // Carrying the previous frame's points over is what ties the per-frame
-    // residuals together in time, and it is the default. Read per call, like
-    // BROADTRACK_NO_PAN_REFINEMENT, so it can be toggled from a test.
     const bool reusePoints = std::getenv("BROADTRACK_NO_POINT_REUSE") == nullptr;
 
     std::map<int, std::vector<cv::Point>> new_points;
@@ -93,19 +83,15 @@ void PointExtractor::run()
 
         std::vector<cv::Point> previous_points;
 
-        // Start from where the previous frame found this line and let the mean
-        // shift below pull each point back onto the current mask. _points is in
-        // mask coordinates precisely so this works at any mask resolution --
-        // the old `_scaling == 1.` guard here disabled reuse for every mask
-        // that was not 540 rows tall, which is all of them (the segmentation
-        // model's output is 256 rows), so every frame re-drew its sample
-        // positions at random.
+        // Start from where the previous frame found this line and
+        // let the mean shift below pull each point back onto the current mask.
+        // _points is in mask coordinates so this works at any mask resolution
         if (reusePoints && _points.find(r) != _points.end() && !_points.at(r).empty())
         {
             previous_points = std::vector<cv::Point>(_points.at(r));
         }
 
-        while (points.size() > 0) // && (double)initialPointSize*0.8/(pow(radius,2)) > finalPoints.size() )
+        while (!points.empty()) // && (double)initialPointSize*0.8/(pow(radius,2)) > finalPoints.size() )
         {
             cv::Point2d candidate;
             cv::Point picked;
