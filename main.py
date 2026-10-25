@@ -1,6 +1,5 @@
 import os
 import sys
-from collections import deque
 
 import cv2
 from tqdm import tqdm
@@ -21,13 +20,6 @@ OUTPUT_DIR = "output/"
 BROADTRACK_KP_WEIGHTS = "models/nbjw_keypoint_model.pt"
 BROADTRACK_LINE_WEIGHTS = "models/tvcalib_model.pt"
 
-# Zero-phase smoothing of the camera pose. BroadTrack re-solves
-# pan/tilt/roll/focal every frame with no temporal prior on them, so the pose
-# wanders by a few cm per frame even on a tripod; the smoother takes that out.
-# It is symmetric, so it needs lookahead and the output trails the video by
-# `calib_engine.lag` frames (window // 2). Set to 1 to turn it off.
-CALIB_SMOOTH_WINDOW = 17
-
 # VIDEO PROCESSING
 cap = cv2.VideoCapture(VIDEO_PATH)
 fps = cap.get(cv2.CAP_PROP_FPS)
@@ -45,7 +37,6 @@ calib_engine = BroadTrackCalib(
     device=device,
     width=width,
     height=height,
-    smooth_window=CALIB_SMOOTH_WINDOW,
 )
 ball_detector = BallDetector(BALL_MODEL_PATH, device)
 ball_tracker = BallTracker(fps=fps)
@@ -121,13 +112,6 @@ def draw(frame, player_dets, ball_dets, calib):
 
 
 # MAIN LOOP
-#
-# Detection runs on the frame that was just read; only the drawing is held
-# back, by however many frames the calibration trails the video (`lag`). So a
-# frame and its detections wait in `pending` until their calibration arrives.
-# With smoothing off `lag` is 0 and this is a plain single-pass loop.
-lag = calib_engine.lag
-pending = deque()
 last_calib = None
 delay = max(1, int(1000 / fps))
 
@@ -144,39 +128,21 @@ for frame_idx in tqdm(range(total_frames)): # don't care about `frame_idx`
     player_boxes = [d["bbox"] for d in player_dets]
 
     calib = calib_engine.estimate(frame, boxes=player_boxes)
-    ball_dets = ball_detector.detect(frame)
-    pending.append((frame, player_dets, ball_dets))
+    if calib is None:
+        tqdm.write("Failed to estimate calib")
+        calib = last_calib
+    else:
+        last_calib = calib
+    if calib is None:
+        continue  # nothing to draw with yet
 
-    canvases = None
-    if len(pending) > lag:  # the delay line is full: this calibration belongs to pending[0]
-        frame_i, dets_i, balls_i = pending.popleft()
-        if calib is not None:
-            last_calib = calib
-        else:
-            # Something the solver refused. Fall back to the last calibration
-            # that worked, as before -- but do keep popping, or every later
-            # frame would be drawn one frame out of step.
-            tqdm.write("Failed to estimate calib")
-            calib = last_calib
-        if calib is not None:
-            canvases = draw(frame_i, dets_i, balls_i, calib)
+    ball_dets = ball_detector.detect(frame)
+    canvases = draw(frame, player_dets, ball_dets, calib)
 
     if has_display():
-        if canvases is not None:
-            cv2.imshow("cam", canvases[0])
-            cv2.imshow("bev", canvases[1])
+        cv2.imshow("cam", canvases[0])
+        cv2.imshow("bev", canvases[1])
         if cv2.waitKey(delay) & 0xFF == ord('q'): break
-
-# The last `lag` frames have no future to be smoothed with, so the smoother
-# hands them back unsmoothed rather than swallowing them.
-for calib in calib_engine.flush():
-    if not pending:
-        break
-    frame_i, dets_i, balls_i = pending.popleft()
-    if calib is None:
-        calib = last_calib
-    if calib is not None:
-        draw(frame_i, dets_i, balls_i, calib)
 
 cv2.destroyAllWindows()
 out_cam.release()

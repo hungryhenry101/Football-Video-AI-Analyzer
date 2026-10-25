@@ -46,7 +46,6 @@ calib = BroadTrackCalib(
     weights_line="models/tvcalib_model.pt",
     device="mps",            # or "cuda" / "cpu"
     width=960, height=540,
-    smooth_window=17,        # zero-phase pose smoothing; 1 = off (default)
 )
 
 result = calib.estimate(frame, boxes=player_boxes)   # dict, or None
@@ -85,15 +84,6 @@ The models can be downloaded from https://github.com/evs-broadcast/BroadTrack/tr
   to discard optical-flow points that landed on a moving player.
 - The tracker is stateful: one instance tracks one continuous shot and is not
   thread-safe. Call `reset()` on a video cut.
-- **`smooth_window > 1` makes `estimate()` a delay line.** The pose it returns
-  then describes the frame `lag` (`= smooth_window // 2`) back, and the first
-  `lag` calls return `None`; call `flush()` at the end of the video to get the
-  tail. The caller has to delay what it draws by the same `lag` — `main.py`
-  does that with a deque. See `core/broadtrack_calib/smoothing.py` for why a
-  zero-phase filter (and therefore the delay) is the only kind that helps here:
-  a causal one lags a real pan, and the built-in
-  `BROADTRACK_PAN_SMOOTH_WINDOW` median filter measurably makes the line-IoU
-  worse.
 - Rendering lives on `PitchGeometry` / `BroadTrackCalib`: `create_bev_template()`
   builds the static pitch image, `world_to_bev_px(x, y)` maps world metres to BEV
   pixels, and `draw_pitch_lines()` projects the markings with a given `P`.

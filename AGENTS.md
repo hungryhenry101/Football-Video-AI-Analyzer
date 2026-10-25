@@ -44,13 +44,6 @@ counter across frames. Call `reset()` on a video cut. See
 `core/BroadTrack/README.md` for the build knobs, the measured per-stage timings,
 and the platform gotchas (import order on macOS, 16:9 requirement).
 
-The pose it emits can be smoothed zero-phase (`smooth_window`, see
-`core/broadtrack_calib/smoothing.py`): BroadTrack re-solves pan/tilt/roll/focal
-every frame with no temporal prior on them, so they wander by a few cm per frame
-even on a tripod. That smoother is symmetric, so with it on `estimate()` returns
-an *older* frame's calibration and the caller must delay its rendering to match
-(`main.py` uses a deque; `calib_engine.lag` says by how much).
-
 `PitchGeometry` owns the **BEV (top-down) representation**: `create_bev_template()`
 builds a static pitch image, `world_to_bev_px(x, y)` maps world meters → BEV
 pixels (pitch is 105×68 m, origin at center, `bev_scale = 10 px/m`), and
