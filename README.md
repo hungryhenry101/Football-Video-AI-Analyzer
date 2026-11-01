@@ -35,11 +35,11 @@ Lucas-Kanade 光流关联都留在 C++，两个检测网络则复用进程中已
 
 ![Player Tracker in BEV](docs/player_track_bev.png)
 
-1. 通过 Object Detection Model 进行球员/裁判分类
+1. 用分割模型检测画面中的所有人员，球员/裁判/守门员身份由 `core/team_assigner.py` 后续推断
 
 2. 用 BoT-SORT 进行跟踪，会自动处理 GMC, ReId, Kalman Filter
 
-(3.) 计划通过位置特征 (目前仅依靠x、y坐标) 识别守门员候选人
+3. 通过球衣颜色聚类分出两队；颜色离群者中，离球门最近的是守门员，其余是裁判
 
 ### III. 足球识别跟踪
 

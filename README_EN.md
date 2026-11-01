@@ -38,11 +38,11 @@ coordinate frame, same drawing helpers. See
 
 ![Player Tracker in BEV](docs/player_track_bev.png)
 
-1. Uses an Object Detection Model to classify players/referees.
+1. Detects every person with a segmentation model; player/referee/goalkeeper roles are inferred later in `core/team_assigner.py`.
 
-2. Tracks objects using trackers (e.g. ByteTrack), automatically handling CMC (Camera Motion Compensation), ReID, and Kalman Filtering.
+2. Tracks people with BoT-SORT, which handles camera motion compensation, ReID, and Kalman filtering.
 
-3. Plans to identify goalkeeper candidates based on spatial features (currently only using x, y coordinates).
+3. Clusters jersey colours into two teams; among the colour outliers, the one nearest a goal is the goalkeeper and the rest are referees.
 
 ### III. Ball Detection and Tracking
 
@@ -55,7 +55,7 @@ coordinate frame, same drawing helpers. See
 </figure>
 </div>
 
-1. Maps all ball detections to the Bird's Eye View (BEV) coordinate system using the homography matrix H.
+1. Maps all ball detections to the Bird's Eye View (BEV) coordinate system through the camera projection matrix P.
 2. Calculates the Mahalanobis Distance from all detected points to the previous ball trajectory.
 3. Uses Chi-Square testing to validate detections and select the best candidate.
 4. Smooths the trajectory and handles occlusions using a Kalman Filter.

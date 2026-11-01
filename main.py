@@ -9,8 +9,8 @@ from tqdm import tqdm
 import torch
 
 from core.broadtrack_calib import BroadTrackCalib
-from core.projection_utils import pixel_to_ground
 from core.player_tracker import PlayerTracker
+from core.player_position import PlayerPositionFilter
 from core.ball_tracker import OCCLUDED, BallDetector, BallTracker
 from core.team_assigner import TeamAssigner
 
@@ -59,6 +59,7 @@ def main():
     ball_detector = BallDetector(BALL_MODEL_PATH, device)
     ball_tracker = BallTracker(fps=fps, static_marks=STATIC_MARKS)
     player_tracker = PlayerTracker(PLAYER_MODEL_PATH, device)
+    player_positions = PlayerPositionFilter()
     team_assigner = TeamAssigner()
 
     bev_template = calib_engine.create_bev_template()
@@ -109,16 +110,14 @@ def main():
             R = calib["R"]
             t = calib["t"]
 
-            team_assigner.update(frame, player_dets, K, R, t)
-            ball_dets = ball_detector.detect(frame)
+            # BEV: players via pixel_to_ground (bottom-centre = ground contact point), filtered per track.
+            positions = player_positions.update(player_dets, K, R, t)
+            team_assigner.update(frame, player_dets, K, R, t, positions=positions)
+            ball_dets = ball_detector.detect(frame) # FIX THIS POSITION ABUNDANT PARAM
 
-            # BEV: players via pixel_to_ground (bottom-centre = ground contact point)
-            player_centers = player_tracker.get_player_centers(player_dets)
-            for tid, (cx, cy) in player_centers.items():
-                pt = pixel_to_ground(cx, cy, K, R, t)
-                if pt is not None:
-                    px, py = calib_engine.world_to_bev_px(pt[0], pt[1])
-                    cv2.circle(bev_canva, (px, py), 4, team_assigner.draw_colour(tid), -1)
+            for tid, (x, y) in positions.items():
+                px, py = calib_engine.world_to_bev_px(x, y)
+                cv2.circle(bev_canva, (px, py), 4, team_assigner.draw_colour(tid), -1)
 
             # BEV: ball
             ball_candidates = ball_detector.get_candidates(ball_dets, K, R, t)

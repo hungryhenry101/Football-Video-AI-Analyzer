@@ -23,7 +23,7 @@ import torch
 
 from core.broadtrack_calib import BroadTrackCalib
 from core.player_tracker import PlayerTracker
-from core.projection_utils import pixel_to_ground
+from core.player_position import PlayerPositionFilter
 from core.team_assigner import TeamAssigner, lab_to_bgr
 
 PLAYER_MODEL = "models/yolo11n-seg.pt"
@@ -124,6 +124,7 @@ def main():
                                      (bev_template.shape[1], bev_template.shape[0]))
 
     assigner = TeamAssigner()
+    positions = PlayerPositionFilter()
 
     observations: dict[int, list] = {}
     last_calib = None
@@ -141,20 +142,17 @@ def main():
             last_calib = calib
         K, R, t = (calib["K"], calib["R"], calib["t"]) if calib is not None else (None, None, None)
 
-        assigner.update(frame, dets, K, R, t)
+        ground = positions.update(dets, K, R, t) if K is not None else {}
+        assigner.update(frame, dets, K, R, t, positions=ground)
 
         cam = draw_cam(frame, dets, assigner)
         panel = draw_panel(assigner, observations, idx, cam.shape[0])
         combined = np.hstack([cam, panel])
 
         bev = bev_template.copy()
-        if K is not None:
-            for det in dets:
-                x1, _, x2, y2 = det["bbox"]
-                point = pixel_to_ground((x1 + x2) / 2, y2, K, R, t)
-                if point is not None:
-                    px, py = calib_engine.world_to_bev_px(point[0], point[1])
-                    cv2.circle(bev, (px, py), 5, assigner.draw_colour(det["id"]), -1)
+        for tid, (x, y) in ground.items():
+            px, py = calib_engine.world_to_bev_px(x, y)
+            cv2.circle(bev, (px, py), 5, assigner.draw_colour(tid), -1)
 
         if writer_cam is not None:
             writer_cam.write(combined)
