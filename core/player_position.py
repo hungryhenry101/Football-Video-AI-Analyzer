@@ -1,6 +1,7 @@
 """
-Foot point: the box's float bottom-centre, not the mask's lowest pixel
+Foot point: the box's float bottom-centre, not the mask's lowest pixel.
 KF: a per-track constant-velocity Kalman filter over the world position after projection.
+On-pitch gate: ``update`` splits the filtered positions to on_pitch and off_pitch
 """
 
 from __future__ import annotations
@@ -10,8 +11,12 @@ import numpy as np
 
 from core.projection_utils import pixel_to_ground
 
-#: Constant-velocity model in world metres, one step per frame:
-#: state = [x, y, vx, vy].
+PITCH_LENGTH = 105.0
+PITCH_WIDTH = 68.0
+PITCH_MARGIN = 1.0
+
+# Constant-velocity model in world metres, one step per frame:
+# state = [x, y, vx, vy]
 _TRANSITION = np.array(
     [[1.0, 0.0, 1.0, 0.0],
      [0.0, 1.0, 0.0, 1.0],
@@ -41,9 +46,21 @@ def foot_point(obj) -> tuple:
     return (x1 + x2) / 2.0, y2
 
 
+def inside_pitch(point) -> bool:
+    """Whether a world-metre ground point is on the pitch, within ``PITCH_MARGIN``.
+    Args:
+        point: ``(x, y)`` in metres, or None.
+    """
+    if point is None:
+        return False
+    return (
+        abs(float(point[0])) <= PITCH_LENGTH / 2 + PITCH_MARGIN
+        and abs(float(point[1])) <= PITCH_WIDTH / 2 + PITCH_MARGIN
+    )
+
+
 class PlayerPositionFilter:
     """Per-track Kalman filter over players' BEV positions.
-
     Args:
         process_noise: variance added to every state each frame.
         measurement_noise: variance of the ground position a detection has, in m².
@@ -67,13 +84,14 @@ class PlayerPositionFilter:
         self._r = np.eye(2) * self.measurement_noise
         self._tracks: dict[int, _Track] = {}
 
-    def update(self, tracked_objects, K, R, t) -> dict:
-        """Filter this frame's detections into BEV positions.
+    def update(self, tracked_objects, K, R, t):
+        """Filter this frame's detections
         Args:
             tracked_objects: as returned by ``PlayerTracker.update``.
-            K, R, t: the calibration for *this* frame.
+            K, R, t: the calibration for current frame.
         Returns:
-            ``{track_id: (x, y)}`` in world metres, for the tracks detected on this frame only.
+            ``(on_pitch, off_pitch)``:
+            ``on_pitch`` is ``{track_id: (x, y)}`` in world metres; ``off_pitch`` is the set of ids off pitch
         """
         measured = {}
         for obj in tracked_objects:
@@ -103,7 +121,15 @@ class PlayerPositionFilter:
             self._tracks[tid] = _Track(state, np.eye(4) * self.initial_covariance, 0)
             positions[tid] = (float(point[0]), float(point[1]))
 
-        return positions
+        on_pitch, off_pitch = {}, set()
+        for obj in tracked_objects:
+            tid = int(obj["id"])
+            point = positions.get(tid)
+            if inside_pitch(point):
+                on_pitch[tid] = point
+            else:
+                off_pitch.add(tid)
+        return on_pitch, off_pitch
 
     def reset(self) -> None:
         """Forget every track. Call on a video cut."""

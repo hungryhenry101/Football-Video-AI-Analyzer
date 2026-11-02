@@ -1,12 +1,12 @@
 """Cluster tracked people into 2 teams + referee and goalkeepers
 
-Input the return of ``PlayerTracker.update``: [{id, bbox, cls, conf, mask}]
+Given a list of return from ``PlayerTracker.update``: [{id, bbox, cls, conf, mask}]
+as well as ``PlayerPositionFilter.update``: [{track_id: (x, y)}]
 
 Two stages:
 1. ``identify_jersey_colour`` extract a single colour from every mask
 2. ``cluster_colours`` finds the two teams among those per-player colours
 
-Only deal with people standing on the pitch — see ``filter_on_pitch``;
 Colour is in CIE-Lab. Clustering uses ``a``/``b`` plus ``L`` with weight.
 """
 
@@ -17,8 +17,7 @@ import numpy as np
 from collections import deque, defaultdict, Counter
 from typing import NamedTuple
 
-from core.projection_utils import pixel_to_ground
-from core.player_position import foot_point
+PITCH_LENGTH = 105.0
 
 TEAM_A = 0
 TEAM_B = 1
@@ -27,7 +26,6 @@ PLAYER = "player"
 GOALKEEPER = "goalkeeper"
 REFEREE = "referee"
 
-# Third kits keep fixed swatches; teams are drawn in their own jersey colour.
 ROLE_COLOURS = {REFEREE: (0, 255, 255), GOALKEEPER: (255, 0, 255)}
 UNKNOWN_COLOUR = (128, 128, 128)
 
@@ -39,10 +37,6 @@ REF_DIST_FLOOR = 25.0 # floor for ref dist
 
 TORSO_TOP = 0.20 # head and hair
 TORSO_BOTTOM = 0.55 # shorts and socks
-
-PITCH_LENGTH = 105.0
-PITCH_WIDTH = 68.0
-PITCH_MARGIN = 1.0 # margin of pitch when deciding on pitch people
 
 
 class Assignment(NamedTuple):
@@ -82,20 +76,6 @@ class TeamAssigner:
         self.voted_colours: dict[int, np.ndarray] = {} # id -> mean LAB of the history
         self.voted_assignments: dict[int, Assignment] = {} # id -> voted assignments
         self.off_pitch: set[int] = set() # ids off pitch
-
-    # ----------------------------------------------------------- the pitch
-
-    def filter_on_pitch(self, tracked_objects, K=None, R=None, t=None, positions=None):
-        if positions is None and (K is None or R is None or t is None):
-            return list(tracked_objects), set()
-
-        on_pitch, off_pitch = [], set()
-        for obj in tracked_objects:
-            if self.inside_pitch(self.ground_position(obj, K, R, t, positions)):
-                on_pitch.append(obj)
-            else:
-                off_pitch.add(obj["id"])
-        return on_pitch, off_pitch
 
     # ---------------------------------------------------------------- stage 1
 
@@ -192,7 +172,6 @@ class TeamAssigner:
 
     def cluster_colours(self, colours, k: int = 2):
         """K-means over one colour vector per player.
-
         Args:
             colours: (N, D) array, one row per player.
             k: number of clusters.
@@ -209,25 +188,18 @@ class TeamAssigner:
 
     # ------------------------------------------------------------- per frame
 
-    def update(self, frame, tracked_objects, K=None, R=None, t=None, positions=None):
+    def update(self, frame, tracked_objects, on_pitch_pos):
         """With history data and new detections, re-cluster every known player.
-        So it can handle players that are occluded or motion-blurred.
-        Only deal with people on pitch — ``filter_on_pitch`` runs first
-
         Args:
             frame: current frame
             tracked_objects: as returned by ``PlayerTracker.update``.
-            K, R, t: pitch calibration, for position information
-            positions: ``{id: (x, y)}`` world metres, already filtered. When
-                given it is used instead of projecting the raw boxes, so the
-                verdict here matches the BEV the caller draws.
-
+            on_pitch_pos: ``{id: (x, y)}`` world metres, by PlayerPositionFilter.update()
         Returns:
             ``{id: {"team": TEAM_A | TEAM_B | None, "role": str}}``
         """
-        on_pitch, self.off_pitch = self.filter_on_pitch(
-            tracked_objects, K, R, t, positions
-        )
+        detected = {obj["id"] for obj in tracked_objects}
+        self.off_pitch = detected - on_pitch_pos.keys()
+        on_pitch = [obj for obj in tracked_objects if obj["id"] in on_pitch_pos]
 
         for obj in on_pitch:
             colour = self.identify_jersey_colour(obj, frame)
@@ -243,7 +215,6 @@ class TeamAssigner:
         }
 
         ppl_on_pitch = {obj["id"] for obj in on_pitch}
-        detected = {obj["id"] for obj in tracked_objects}
         # players detected on-pitch, or not detected in this frame
         ids = [tid for tid in self.voted_colours if tid in ppl_on_pitch or tid not in detected]
         if len(ids) < 2: return None # one player only
@@ -273,20 +244,16 @@ class TeamAssigner:
             REF_DIST_FACTOR * (min(spreads) if spreads else 0.0),
         )
 
-        pitch_obj_map = {obj["id"]: obj for obj in on_pitch}
-        outliers = {}  # tid -> ground_position
+        outliers = {}  # tid -> world position
 
         for tid, label, dist in zip(ids, labels, nearest):
             if dist <= threshold:
                 self.assign_acc[tid].append(Assignment(int(label), PLAYER))
                 continue
 
-            obj = pitch_obj_map.get(tid)
-            if obj is None: # not detected in this frame
-                continue
-
-            position = self.ground_position(obj, K, R, t, positions)
-            if position is not None:  # the ray can miss the ground plane
+            # a track not detected this frame is not in ``positions``
+            position = on_pitch_pos.get(tid)
+            if position is not None:
                 outliers[tid] = position
         if outliers:
             goal = np.array([PITCH_LENGTH / 2, 0.0])
@@ -330,29 +297,6 @@ class TeamAssigner:
         return ROLE_COLOURS.get(assignment.role, UNKNOWN_COLOUR)
 
     @staticmethod
-    def ground_position(obj, K, R, t, positions=None):
-        """Bottom-centre of each box on the ground plane, in world metres.
-
-        Bottom-centre because that is where a player meets the pitch.
-
-        ``positions`` (from ``core.player_position.PlayerPositionFilter``) is the
-        same point after temporal filtering. Prefer it when available: the raw
-        box moves the ground point by up to 0.6 m per pixel at the far goal
-        line, and ``inside_pitch`` judges against a +/-1 m margin, so an
-        unfiltered foot flips players across the touchline frame by frame.
-        """
-        if positions is not None:
-            point = positions.get(obj["id"])
-            if point is not None:
-                return float(point[0]), float(point[1])
-        if K is None or R is None or t is None:
-            return None
-        point = pixel_to_ground(*foot_point(obj), K, R, t)
-        if point is None:
-            return None
-        return float(point[0]), float(point[1])
-
-    @staticmethod
     def lab_cv2kmeans(colours):
         """Clustering ``(a, b, L * L_WEIGHT)``"""
         features = np.empty_like(colours, dtype=np.float32)
@@ -376,14 +320,6 @@ class TeamAssigner:
         remap[order] = np.arange(len(order))
         return remap[labels], centres[order]
 
-    @staticmethod
-    def inside_pitch(point):
-        if point is None:
-            return False
-        return (
-            abs(float(point[0])) <= PITCH_LENGTH / 2 + PITCH_MARGIN
-            and abs(float(point[1])) <= PITCH_WIDTH / 2 + PITCH_MARGIN
-        )
 
 def lab_to_bgr(lab):
     """The BGR triple a float CIE-Lab colour corresponds to.

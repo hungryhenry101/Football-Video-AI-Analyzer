@@ -2,9 +2,22 @@
 
 This file provides guidance to coding agents when working in this project. To make this file always up-to-date, modify it if major changes are made
 
-## when working with the code
+## Developing Guidelines
 
-Keep your code comments concise.
+### Before Making Changes
+1. Read relevant documentation
+2. Inspect the existing implementation and understand the current module boundaries.
+
+### Implementation Principles
+1. If anything is unsure, ask the user rather than guessing and proceeding.
+2. Prioritise readability for humans. Avoid overly concise or abstract expressions that make code difficult to understand.
+3. Write concise comments for non-obvious logic, design decisions, or variables. Not everywhere.
+4. Never hardcode API keys, tokens, or other credentials.
+5. Stay within the requested scope, reuse existing code where appropriate, and avoid unrelated refactoring.
+
+### After Making Changes
+1. Report what was changed and any known limitations.
+2. Update relevant documentation (including this file AGENTS.md) to reflect the actual implementation and any changed interfaces or decisions.
 
 ## Project Overview
 
@@ -20,7 +33,7 @@ A research/learning prototype (not production) that ingests a football match vid
   python scripts/build_minimal_ceres.py    # once, ~5 min
   python scripts/build_native.py           # rerun after any C++ change
   ```
-  OpenCV and Ceres are compiled locally, not taken from a package manager: Reasons and trade-offs in `core/BroadTrack/README.md`
+  OpenCV and Ceres are compiled locally. For reason see `core/BroadTrack/README.md`
 
 ### After that
 - run the pipeline: `python main.py --video input_vids/test2.mp4 --max-frames 200 --no-display`
@@ -30,23 +43,18 @@ A research/learning prototype (not production) that ingests a football match vid
 The pipeline has three stages wired together in `main.py`'s loop.
 
 ### 1. Pitch detection & calibration — `core/broadtrack_calib/`
-BroadTrack's temporal camera tracker, wrapped for Python. Two TorchScript
-detectors run in Python (`models.py`: `nbjw_keypoint_model.pt` for 57 pitch
-keypoints, `tvcalib_model.pt` for 28 pitch-line classes); everything numerically
-expensive is C++ in `core/BroadTrack/python/`, built as the `_broadtrack`
-extension. `BroadTrackCalib.estimate(frame, boxes=None)` returns a dict with
+BroadTrack's temporal camera tracker, wrapped for Python from C++.
+It runs two TorchScript detectors (keypoint and lines).
+`BroadTrackCalib.estimate(frame, boxes=None)` returns a dict with
 **`K` (intrinsics), `R` (rotation), `t` (translation), `P = K[R | -Rt]`**, plus
 `score` (line-IoU), `reinit`, `k1` and the pan/tilt/roll decomposition.
 
-Unlike the per-frame solver it replaced, the tracker is stateful: it carries the
-camera, the optical-flow tracks, an anchored tripod position and a lost-tracking
-counter across frames. Call `reset()` on a video cut. See
-`core/BroadTrack/README.md` for the build knobs, the measured per-stage timings,
-and the platform gotchas (import order on macOS, 16:9 requirement).
+The tracker is stateful, carrying data across frames. 
+See `core/BroadTrack/README.md` for platform gotchas and more detailed info.
 
 `PitchGeometry` owns the **BEV (top-down) representation**: `create_bev_template()`
 builds a static pitch image, `world_to_bev_px(x, y)` maps world meters → BEV
-pixels (pitch is 105×68 m, origin at center, `bev_scale = 10 px/m`), and
+pixels (pitch is 105×68 m, origin at centre, `bev_scale = 10 px/m`), and
 `draw_pitch_lines()` projects the markings with a given `P`.
 
 ### 2. Player tracking — `core/player_tracker.py`
@@ -72,23 +80,13 @@ Candidate filtering is always-on for projection, pitch bounds and bbox shape. **
 
 ### Coordinate systems & projection — `core/projection_utils.py`
 Read it before touching any projection code.
-- **World coords**: meters, origin at pitch center, x towards the right goal line, y towards the bottom touch line, ground plane `z=0`, and **z is negative above the ground** (the camera sits at negative z). This is BroadTrack's frame and the one PnLCalib used, so the two are interchangeable.
+- **World coords**: meters, origin at pitch centre, x towards the right goal line, y towards the bottom touch line, ground plane `z=0`, and **z is negative above the ground** (the camera sits at negative z). This is BroadTrack's frame and the one PnLCalib used, so the two are interchangeable.
 - `pixel_to_ground(u,v,K,R,t)` → ground (z=0) intersection using the **full pinhole model** (preferred over homography when camera tilt ≠ 0).
 - `pixel_to_3d(u,v,bbox_width,K,R,t)` → full 3D position from apparent ball size; **currently unused** but is the planned path for aerial/high balls (see problems.md).
-- `project_3d_to_pixel(points_3d,K,R,t)` applies `P = K[R | -Rt]`; only the tests use it, to synthesize detections.
+- `project_3d_to_pixel(points_3d,K,R,t)` applies `P = K[R | -Rt]`; only the tests use it, to synthesise detections.
 
-## Files and Docs
-
-### under `demos/`
-Demos of core modules.
-
-### gitignore
-- `output`: folder in root and in test folder
-- `models`: all four model weights — the two YOLO detectors (`football_best.pt`,
-  `football_best_big.pt`) and BroadTrack's two TorchScript detectors (see `core/BroadTrack/README.md`)
-- `core/broadtrack_calib/_broadtrack*.so`: the compiled extension
-
-### under `docs/`
+## Docs
+### `docs/`
 - `problems.md`: solved and to be solved problems/bugs, some may have solutions and some may require deeper research
 - `What Have I Learnt.md`: For academic report or sth like that
 

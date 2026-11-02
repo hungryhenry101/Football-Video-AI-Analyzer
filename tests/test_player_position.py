@@ -16,7 +16,8 @@ The properties that matter, roughly in order:
   the jitter it removes, except that it is a bias;
 * a track that was not detected this frame is not reported, so the caller draws
   what the detector saw;
-* the on-pitch verdict uses the same positions the BEV does.
+* the on-pitch split is the filter's own verdict, so the BEV and the team
+  assigner cannot disagree about it.
 """
 
 from __future__ import annotations
@@ -24,9 +25,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from core.player_position import PlayerPositionFilter, foot_point
+from core.player_position import (
+    PITCH_LENGTH,
+    PITCH_MARGIN,
+    PITCH_WIDTH,
+    PlayerPositionFilter,
+    foot_point,
+    inside_pitch,
+)
 from core.projection_utils import project_3d_to_pixel
-from core.team_assigner import TeamAssigner
 
 #: Frame 0 of input_vids/test1.mp4, as BroadTrackCalib solved it: 960x540.
 FOCAL, PAN, TILT, ROLL = 1179.2, 2.148, 74.801, -0.280
@@ -89,7 +96,7 @@ def test_filter_removes_noise_from_a_stationary_player():
     for i in range(120):
         noisy = rng.normal(0.0, 0.35, 2)
         raw.append(noisy)
-        filtered.append(filt.update([detection(1, noisy)], K, R, T)[1])
+        filtered.append(filt.update([detection(1, noisy)], K, R, T)[0][1])
     raw, filtered = np.array(raw[10:]), np.array(filtered[10:])
     assert np.linalg.norm(filtered.std(axis=0)) < np.linalg.norm(raw.std(axis=0)) * 0.85
     # and it stays centred on the truth rather than drifting off it
@@ -103,7 +110,7 @@ def test_filter_does_not_lag_a_moving_player():
     lagged = []
     for i in range(60):
         truth = np.array([-20.0 + 0.28 * i, 0.0])
-        got = filt.update([detection(2, truth)], K, R, T)[2]
+        got = filt.update([detection(2, truth)], K, R, T)[0][2]
         if i >= 5:
             lagged.append(np.linalg.norm(np.array(got) - truth))
     assert max(lagged) < 0.10, f"the filter lagged a clean run by {max(lagged):.3f} m"
@@ -111,8 +118,10 @@ def test_filter_does_not_lag_a_moving_player():
 
 def test_filter_reports_only_what_was_detected_this_frame():
     filt = PlayerPositionFilter()
-    assert list(filt.update([detection(7, (1.0, 1.0))], K, R, T)) == [7]
-    assert filt.update([], K, R, T) == {}
+    on_pitch, off_pitch = filt.update([detection(7, (1.0, 1.0))], K, R, T)
+    assert list(on_pitch) == [7]
+    assert off_pitch == set()
+    assert filt.update([], K, R, T) == ({}, set())
 
 
 def test_a_missing_track_is_coasted_then_forgotten():
@@ -121,26 +130,26 @@ def test_a_missing_track_is_coasted_then_forgotten():
     for _ in range(3):
         filt.update([], K, R, T)
     # still known: coming back a few frames later should be filtered, not fresh
-    assert np.linalg.norm(np.array(filt.update([detection(7, (1.2, 1.0))], K, R, T)[7])
+    assert np.linalg.norm(np.array(filt.update([detection(7, (1.2, 1.0))], K, R, T)[0][7])
                           - np.array([1.2, 1.0])) < 0.30
     for _ in range(4):                      # past max_coast: starts from scratch
         filt.update([], K, R, T)
-    assert filt.update([detection(7, (1.0, 1.0))], K, R, T)[7] == pytest.approx((1.0, 1.0), abs=1e-5)
+    assert filt.update([detection(7, (1.0, 1.0))], K, R, T)[0][7] == pytest.approx((1.0, 1.0), abs=1e-5)
 
 
 def test_a_new_track_starts_at_its_measurement():
     filt = PlayerPositionFilter()
-    assert filt.update([detection(5, (10.0, -4.0))], K, R, T)[5] == pytest.approx((10.0, -4.0))
+    assert filt.update([detection(5, (10.0, -4.0))], K, R, T)[0][5] == pytest.approx((10.0, -4.0))
 
 
 def test_reset_forgets_every_track():
     filt = PlayerPositionFilter()
     filt.update([detection(1, (1.0, 1.0))], K, R, T)
     filt.reset()
-    assert filt.update([detection(2, (2.0, 2.0))], K, R, T)[2] == pytest.approx((2.0, 2.0))
+    assert filt.update([detection(2, (2.0, 2.0))], K, R, T)[0][2] == pytest.approx((2.0, 2.0))
 
 
-def test_a_detection_off_the_ground_plane_is_ignored():
+def test_a_detection_off_the_ground_plane_is_not_on_pitch():
     """A box whose ray points above the horizon has no ground position; the
     track must not be reported with a bogus one.
 
@@ -150,40 +159,40 @@ def test_a_detection_off_the_ground_plane_is_ignored():
     filt = PlayerPositionFilter()
     looking_up = np.diag([1.0, -1.0, -1.0])
     obj = {"id": 1, "bbox": np.array([400.0, 240.0, 420.0, 270.0], dtype=np.float32)}
-    assert filt.update([obj], K, looking_up, T) == {}
+    assert filt.update([obj], K, looking_up, T) == ({}, {1})
 
 
-# --------------------------------------------------------- team assignment
+# -------------------------------------------------------------- on-pitch gate
 
 
-def test_ground_position_prefers_the_filtered_position():
-    obj = detection(3, (0.0, 0.0))
-    raw = TeamAssigner.ground_position(obj, K, R, T)
-    given = TeamAssigner.ground_position(obj, K, R, T, {3: (12.0, -7.0)})
-    assert given == (12.0, -7.0)
-    assert raw is not None and raw != given
+def test_inside_pitch_grants_the_margin_on_every_line():
+    assert inside_pitch((0.0, 0.0))
+    assert inside_pitch((PITCH_LENGTH / 2 + PITCH_MARGIN, 0.0))
+    assert not inside_pitch((PITCH_LENGTH / 2 + PITCH_MARGIN + 0.01, 0.0))
+    assert inside_pitch((0.0, -(PITCH_WIDTH / 2 + PITCH_MARGIN)))
+    assert not inside_pitch((0.0, -(PITCH_WIDTH / 2 + PITCH_MARGIN + 0.01)))
+    assert not inside_pitch(None)
 
 
-def test_ground_position_falls_back_to_the_projection():
-    obj = detection(4, (5.0, 5.0))
-    assert TeamAssigner.ground_position(obj, K, R, T) == pytest.approx((5.0, 5.0), abs=0.01)
+def test_off_pitch_detections_are_split_out():
+    filt = PlayerPositionFilter()
+    on_pitch, off_pitch = filt.update(
+        [detection(1, (0.0, 0.0)), detection(2, (0.0, 40.0))], K, R, T
+    )
+    assert on_pitch.keys() == {1}
+    assert off_pitch == {2}
 
 
-def test_positions_are_found_for_the_ids_the_detector_actually_produces():
-    """``PlayerTracker`` hands out numpy integers, not Python ones. If the
-    lookup missed them this would silently fall back to the raw projection --
-    no error, just the jitter back."""
-    obj = detection(np.int64(3), (0.0, 0.0))
-    assert TeamAssigner.ground_position(obj, K, R, T, {3: (12.0, -7.0)}) == (12.0, -7.0)
-
-
-def test_filter_on_pitch_uses_the_positions_it_is_given():
-    """The verdict must follow whatever the caller drew, or a player can be on
-    the BEV and off the pitch in the same frame."""
-    assigner = TeamAssigner()
-    on_pitch = detection(1, (0.0, 0.0))
-    off_pitch = detection(2, (0.0, 0.0))
-    positions = {1: (0.0, 0.0), 2: (0.0, 60.0)}     # 60 m out: off the pitch
-    kept, dropped = assigner.filter_on_pitch([on_pitch, off_pitch], K, R, T, positions)
-    assert [o["id"] for o in kept] == [1]
-    assert dropped == {2}
+def test_an_off_pitch_track_keeps_its_filter_state():
+    """Stepping over the touchline must not restart the Kalman filter, or the
+    player comes back with a fresh measurement's jitter."""
+    filt = PlayerPositionFilter()
+    for i in range(30):                     # build up +y velocity inside the pitch
+        filt.update([detection(1, (0.0, float(i)))], K, R, T)
+    for i in range(30, 40):                 # walk over the touchline
+        _, off_pitch = filt.update([detection(1, (0.0, float(i)))], K, R, T)
+    assert off_pitch == {1}                 # the last foot was 5 m out
+    got = filt.update([detection(1, (0.0, 25.0))], K, R, T)[0][1]
+    # a fresh track would return the measurement exactly; the retained +y
+    # velocity pulls the estimate past it
+    assert got[1] > 25.0

@@ -110,12 +110,12 @@ def main():
             R = calib["R"]
             t = calib["t"]
 
-            # BEV: players via pixel_to_ground (bottom-centre = ground contact point), filtered per track.
-            positions = player_positions.update(player_dets, K, R, t)
-            team_assigner.update(frame, player_dets, K, R, t, positions=positions)
-            ball_dets = ball_detector.detect(frame) # FIX THIS POSITION ABUNDANT PARAM
+            # BEV: players via pixel_to_ground
+            on_pitch_pos, _ = player_positions.update(player_dets, K, R, t)
+            team_assigner.update(frame, player_dets, on_pitch_pos)
+            ball_dets = ball_detector.detect(frame)
 
-            for tid, (x, y) in positions.items():
+            for tid, (x, y) in on_pitch_pos.items():
                 px, py = calib_engine.world_to_bev_px(x, y)
                 cv2.circle(bev_canva, (px, py), 4, team_assigner.draw_colour(tid), -1)
 
