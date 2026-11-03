@@ -4,7 +4,6 @@ import argparse
 import os
 
 import cv2
-import numpy as np
 from tqdm import tqdm
 import torch
 
@@ -18,7 +17,6 @@ BALL_MODEL_PATH = "models/yolo-sn-ball.pt"
 PLAYER_MODEL_PATH = "models/yolo11n-seg.pt"
 
 # BroadTrack's TorchScript detectors. See core/BroadTrack/README.md;
-# all four weights live in models/ (that directory is gitignored).
 BROADTRACK_KP_WEIGHTS = "models/nbjw_keypoint_model.pt"
 BROADTRACK_LINE_WEIGHTS = "models/tvcalib_model.pt"
 
@@ -27,7 +25,7 @@ STATIC_MARKS = [(0.0, 0.0), (41.5, 0.0), (-41.5, 0.0)]
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--video", default="input_vids/test2.mp4")
+    parser.add_argument("--video", default="input_vids/test1.mp4")
     parser.add_argument("--max-frames", type=int, default=0, help="0 for the whole video")
     parser.add_argument("--out-dir", default="output")
     parser.add_argument("--no-display", action="store_true", help="run headless")
