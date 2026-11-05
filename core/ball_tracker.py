@@ -4,7 +4,10 @@ import numpy as np
 from ultralytics import YOLO
 from filterpy.kalman import KalmanFilter
 from scipy.stats import chi2
+from core.log import TRACE, get_logger
 from core.projection_utils import pixel_to_ground, pixel_to_3d
+
+logger = get_logger(__name__)
 
 PITCH_HALF_LENGTH = 105.0 / 2
 PITCH_HALF_WIDTH = 68.0 / 2
@@ -67,6 +70,10 @@ class BallDetector:
             device=self.device,
             verbose=False
         )
+        if detections and detections[0].boxes is not None:
+            logger.trace("detect: %d ball box(es)", len(detections[0].boxes))
+        else:
+            logger.trace("detect: no ball boxes")
         return detections
 
     def get_candidates(self, detections, K, R, t):
@@ -111,6 +118,8 @@ class BallDetector:
                 width_px=width, height_px=height,
                 conf=float(conf), z_est=z_est,
             ))
+        logger.trace("candidates: %d raw box(es) -> %d candidate(s)",
+                     len(boxes), len(candidates))
         return candidates
 
 
@@ -127,6 +136,25 @@ CANDIDATE_FIELDS = [
     "frame_idx", "cand_idx", "u", "v", "x", "y", "width_px", "height_px",
     "conf", "z_est", "d2", "dist_m", "plausible", "tier", "accepted", "reject_reason",
 ]
+
+
+def _format_record(fields, record):
+    """``field=value`` pairs, skipping missing values; floats are compact."""
+    parts = []
+    for field in fields:
+        value = record.get(field)
+        if value is None:
+            continue
+        parts.append(f"{field}={value:.4g}" if isinstance(value, float) else f"{field}={value}")
+    return " ".join(parts)
+
+
+def _fmt(value, digits=2):
+    return "-" if value is None else f"{value:.{digits}f}"
+
+
+def _fmt_point(x, y):
+    return "-" if x is None or y is None else f"({x:.2f}, {y:.2f})"
 
 class BallTracker:
     """TENTATIVE -> TRACKING <-> OCCLUDED -> LOST state machine.
@@ -184,6 +212,18 @@ class BallTracker:
         marks = list(static_marks) if static_marks else list(FALLBACK_STATIC_MARKS)
         self.static_marks = [(float(x), float(y)) for x, y in marks]
 
+        #: Structured copy of the most recent frame, using ``FRAME_FIELDS``.
+        #: Handy in a notebook or when writing a debug CSV; not otherwise used.
+        self.last_frame_record: dict = {}
+        logger.debug(
+            "BallTracker: fps=%.2f dt=%.4f n_occ=%d n_drop=%d gate_chi2=%.3f "
+            "gate_max=%.1fm max_speed=%.1fm/s reacquire_after=%d confirm=%d window=%d",
+            self.fps, self.dt, self.n_occ, self.n_drop, self.gate_threshold,
+            self.config.gate_max_m, self.config.ball_max_speed_mps,
+            self.config.reacquire_after, self.config.reacquire_confirm,
+            self.config.reacquire_confirm_window,
+        )
+
     # ---------------------------------------------------------------- public
 
     def process_frame(
@@ -199,6 +239,8 @@ class BallTracker:
         """Advance one frame. Returns the BEV (x, y) to draw, or None."""
         candidates = list(candidates or [])
         player_boxes = self._normalise_boxes(player_boxes)
+        state_before = self.state
+        dropped_before = self._dropped
         self._frame_counter += 1
         self._stat_gate_m = None
         self._phys_gate_m = None
@@ -277,6 +319,21 @@ class BallTracker:
             self.reject_count = 0
             self._dropped = False
 
+        if self.state != state_before:
+            logger.debug(
+                "state %s -> %s (miss=%d reject=%d reacq=%d dropped=%s)",
+                state_before, self.state, self.miss_count, self.reject_count,
+                self.reacq_count, self._dropped,
+            )
+        if self._dropped and not dropped_before:
+            logger.debug("track dropped after %d missed frames", self.miss_count)
+
+        self._log_frame(
+            frame_idx if frame_idx is not None else self._frame_counter - 1,
+            calib_score, calib_reinit, calib_frames_lost, calib_valid,
+            pred, best, accepted, len(candidates), n_plausible, entries,
+        )
+
         position = self._output_position()
         return position
 
@@ -291,6 +348,93 @@ class BallTracker:
         if self.get_position() is None:
             return None
         return float(self.kf.x[2].item()), float(self.kf.x[3].item())
+
+    # --------------------------------------------------------------- logging
+
+    def _log_frame(
+        self, frame_idx, calib_score, calib_reinit, calib_frames_lost, calib_valid,
+        pred, best, accepted, n_raw, n_plausible, entries,
+    ):
+        """Emit the per-frame debug line and the per-candidate TRACE lines.
+
+        ``record`` follows ``FRAME_FIELDS`` and is kept on the instance so a
+        caller can inspect the same values without parsing the log.
+        """
+        measured = best if accepted else None
+        meas_x = None if measured is None else measured["x"]
+        meas_y = None if measured is None else measured["y"]
+        pred_x, pred_y = pred if pred is not None else (None, None)
+        innov_x = innov_y = None
+        if pred_x is not None and meas_x is not None:
+            innov_x = meas_x - pred_x
+            innov_y = meas_y - pred_y
+
+        record = {
+            "frame_idx": frame_idx,
+            "calib_score": calib_score,
+            "calib_reinit": int(bool(calib_reinit)),
+            "calib_frames_lost": calib_frames_lost,
+            "calib_valid": int(bool(calib_valid)),
+            "state": self.state,
+            "miss_count": self.miss_count,
+            "reject_count": self.reject_count,
+            "reacq_count": self.reacq_count,
+            "n_raw": n_raw,
+            # plausible: usable for association (not blocked by a static mark /
+            # foot band); candidates: passed the always-on filters
+            "n_plausible": sum(entry["plausible"] for entry in entries),
+            "n_candidates": n_plausible,
+            "accepted": int(accepted),
+            "best_d2": None if measured is None else measured.get("d2"),
+            "best_dist_m": None if measured is None else measured.get("dist_m"),
+            "gate_chi2": self.gate_threshold,
+            "gate_m": self.config.gate_max_m,
+            "stat_gate_m": self._stat_gate_m,
+            "phys_gate_m": self._phys_gate_m,
+            "pred_x": pred_x,
+            "pred_y": pred_y,
+            "meas_x": meas_x,
+            "meas_y": meas_y,
+            "innov_x": innov_x,
+            "innov_y": innov_y,
+        }
+        self.last_frame_record = record
+
+        logger.debug(
+            "calib=%s score=%s | state=%s miss=%d reject=%d reacq=%d dropped=%s | "
+            "raw=%d plausible=%d candidates=%d accepted=%s | gates stat=%s phys=%s | "
+            "pred=%s meas=%s innov=%s best_d2=%s dist=%s",
+            "valid" if calib_valid else "stale", _fmt(calib_score),
+            record["state"], self.miss_count, self.reject_count, self.reacq_count,
+            self._dropped, n_raw, record["n_plausible"], record["n_candidates"], accepted,
+            _fmt(self._stat_gate_m), _fmt(self._phys_gate_m),
+            _fmt_point(pred_x, pred_y), _fmt_point(meas_x, meas_y),
+            _fmt_point(innov_x, innov_y),
+            _fmt(record["best_d2"], 3), _fmt(record["best_dist_m"], 3),
+        )
+
+        if not logger.isEnabledFor(TRACE):
+            return
+        for index, entry in enumerate(entries):
+            candidate = {
+                "frame_idx": frame_idx,
+                "cand_idx": index,
+                "u": entry["u"],
+                "v": entry["v"],
+                "x": entry["x"],
+                "y": entry["y"],
+                "width_px": entry["width_px"],
+                "height_px": entry["height_px"],
+                "conf": entry["conf"],
+                "z_est": entry["z_est"],
+                "d2": entry["d2"],
+                "dist_m": entry["dist_m"],
+                "plausible": entry["plausible"],
+                "tier": entry["tier"],
+                "accepted": entry["accepted"],
+                "reject_reason": entry["reason"],
+            }
+            logger.trace("cand %s", _format_record(CANDIDATE_FIELDS, candidate))
 
     # ------------------------------------------------------------- decisions
 
@@ -463,6 +607,10 @@ class BallTracker:
         self._reset_confirm()
 
     def _invalidate(self):
+        logger.warning(
+            "Kalman filter diverged (non-finite state); invalidating the track "
+            "after %d missed frame(s)", self.miss_count,
+        )
         self.state = LOST
         self._dropped = True
         self.miss_count = max(self.miss_count, self.n_drop)

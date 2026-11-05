@@ -86,6 +86,10 @@ coordinate frame, same drawing helpers. See
 
 5. Update the weight paths and `VIDEO_PATH` in `main.py` with your file paths.
 6. Run `main.py`: View of camera and BEV will show up
+
+   Add `-v` for per-frame debug logs or `-vv` for per-detection traces. Per-module
+   levels (`--log-module ball_tracker=TRACE`) and log files are described under
+   [Logging](AGENTS.md#logging).
 ---
 
 ## TODO

@@ -12,6 +12,9 @@ import numpy as np
 import torch
 from core.ball_tracker import OCCLUDED, BallDetector, BallTracker
 from core.broadtrack_calib import BroadTrackCalib
+from core.log import clear_frame_context, configure_logging, get_logger, set_frame_context
+
+logger = get_logger(__name__)
 
 FALLBACK_STATIC_MARKS = [(0.0, 0.0), (41.5, 0.0), (-41.5, 0.0)]
 
@@ -32,13 +35,14 @@ def static_marks_from(calib_engine):
 
 
 def main():
+    configure_logging()  # level/file/modules come from the FOOTBALL_LOG_* variables
     vid = cv2.VideoCapture("input_vids/test2.mp4")
     fps = vid.get(cv2.CAP_PROP_FPS) or 25.0
     width = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH) / 2)   # CUSTOM WIDTH if needed
     height = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT) / 2)  # CUSTOM HEIGHT if needed
 
     device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
-    print(f"Using device: {device}")
+    logger.info("ball tracker demo: %dx%d @ %.2f fps on %s", width, height, fps, device)
     ball_detector = BallDetector("models/football_best.pt", device)
 
     calib_engine = BroadTrackCalib(
@@ -64,6 +68,7 @@ def main():
         if not ret:
             break
         frame = cv2.resize(frame, (width, height))
+        set_frame_context(frame_idx)
 
         calib = calib_engine.estimate(frame)
         if calib is None:
@@ -106,6 +111,7 @@ def main():
                 break
         frame_idx += 1
 
+    clear_frame_context()
     vid.release()
     if display:
         cv2.destroyAllWindows()

@@ -34,6 +34,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from core.log import TRACE, get_logger
+
+logger = get_logger(__name__)
+
 # ---------------------------------------------------------------------------
 # Label maps, copied from SoccerPitch3D.h / the upstream model wrappers.
 # ---------------------------------------------------------------------------
@@ -112,21 +116,15 @@ IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
 def resolve_device(device: str | torch.device) -> torch.device:
-    """Deal with devices"""
-    if isinstance(device, torch.device):
-        requested = device
-    else:
-        name = str(device).lower()
-        if name.startswith("cuda") and not torch.cuda.is_available():
-            requested = torch.device("cpu")
-        elif name == "mps" and not torch.backends.mps.is_available():
-            requested = torch.device("cpu")
-        else:
-            requested = torch.device(name)
+    """Resolve a requested backend to one that is actually available."""
+    requested = device if isinstance(device, torch.device) else torch.device(str(device).lower())
+
     if requested.type == "cuda" and not torch.cuda.is_available():
-        requested = torch.device("cpu")
+        logger.warning("device %s requested but CUDA is unavailable; using CPU", requested)
+        return torch.device("cpu")
     if requested.type == "mps" and not torch.backends.mps.is_available():
-        requested = torch.device("cpu")
+        logger.warning("device %s requested but MPS is unavailable; using CPU", requested)
+        return torch.device("cpu")
     return requested
 
 
@@ -177,6 +175,7 @@ class LineSegmentationModel:
         self._model.eval()
         self._model.to(self.device)
         self._mean, self._std = _normalisation_tensors(self.device)
+        logger.debug("line segmentation model loaded from %s on %s", model_path, self.device)
 
     @torch.no_grad()
     def compute_line_mask(self, frame: np.ndarray) -> np.ndarray:
@@ -193,6 +192,14 @@ class LineSegmentationModel:
         for class_index, line_id in LINE_CLASS_TO_ID.items():
             mask[classes == class_index] = line_id
         mask[mask == UNDEFINED_LINE] = 0
+
+        if logger.isEnabledFor(TRACE):
+            detected = np.unique(mask)
+            logger.trace(
+                "line mask %dx%d: %d non-zero px, line ids %s",
+                mask.shape[1], mask.shape[0], int(np.count_nonzero(mask)),
+                [int(value) for value in detected if value],
+            )
         return mask
 
 
@@ -222,6 +229,7 @@ class KeypointDetectionModel:
         self._model = torch.jit.load(str(model_path), map_location="cpu")
         self._model.eval()
         self._model.to(self.device)
+        logger.debug("keypoint model loaded from %s on %s", model_path, self.device)
 
     @torch.no_grad()
     def compute_keypoints(self, frame: np.ndarray) -> List[Tuple[int, List[Tuple[float, float]]]]:
@@ -251,6 +259,11 @@ class KeypointDetectionModel:
             ]
             if points:
                 out.append((point_id, points))
+        if logger.isEnabledFor(TRACE):
+            logger.trace(
+                "keypoints: %d point ids, %d points total",
+                len(out), sum(len(points) for _, points in out),
+            )
         return out
 
     def _local_maxima(self, heatmaps: torch.Tensor) -> Tuple[np.ndarray, torch.Tensor]:

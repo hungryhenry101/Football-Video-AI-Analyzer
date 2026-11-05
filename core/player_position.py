@@ -9,7 +9,10 @@ from __future__ import annotations
 from typing import NamedTuple
 import numpy as np
 
+from core.log import TRACE, get_logger
 from core.projection_utils import pixel_to_ground
+
+logger = get_logger(__name__)
 
 PITCH_LENGTH = 105.0
 PITCH_WIDTH = 68.0
@@ -83,6 +86,12 @@ class PlayerPositionFilter:
         self._q = np.eye(4) * self.process_noise
         self._r = np.eye(2) * self.measurement_noise
         self._tracks: dict[int, _Track] = {}
+        logger.debug(
+            "PlayerPositionFilter: process_noise=%.3f measurement_noise=%.3f "
+            "initial_covariance=%.3f max_coast=%d",
+            self.process_noise, self.measurement_noise,
+            self.initial_covariance, self.max_coast,
+        )
 
     def update(self, tracked_objects, K, R, t):
         """Filter this frame's detections
@@ -98,8 +107,11 @@ class PlayerPositionFilter:
             u, v = foot_point(obj)
             point = pixel_to_ground(u, v, K, R, t)
             if point is None or not np.isfinite(point).all():
+                logger.trace("update: id=%s foot pixel (%.1f, %.1f) is unprojectable",
+                             int(obj["id"]), u, v)
                 continue
             measured[int(obj["id"])] = np.asarray(point, dtype=np.float64)
+        n_projectable = len(measured)
 
         positions = {}
         for tid in list(self._tracks):
@@ -109,17 +121,24 @@ class PlayerPositionFilter:
             if point is None:
                 if track.missing + 1 > self.max_coast:
                     del self._tracks[tid]
+                    logger.trace("update: id=%s dropped after %d coasted frames",
+                                 tid, track.missing + 1)
                 else:
                     self._tracks[tid] = _Track(state, covariance, track.missing + 1)
+                    logger.trace("update: id=%s coasting (%d/%d)",
+                                 tid, track.missing + 1, self.max_coast)
                 continue
             state, covariance = self._correct(state, covariance, point)
             self._tracks[tid] = _Track(state, covariance, 0)
             positions[tid] = (float(state[0]), float(state[1]))
+            logger.trace("update: id=%s measured=(%.2f, %.2f) filtered=(%.2f, %.2f)",
+                         tid, point[0], point[1], state[0], state[1])
 
         for tid, point in measured.items():
             state = np.array([point[0], point[1], 0.0, 0.0])
             self._tracks[tid] = _Track(state, np.eye(4) * self.initial_covariance, 0)
             positions[tid] = (float(point[0]), float(point[1]))
+            logger.trace("update: id=%s new track at (%.2f, %.2f)", tid, point[0], point[1])
 
         on_pitch, off_pitch = {}, set()
         for obj in tracked_objects:
@@ -129,11 +148,17 @@ class PlayerPositionFilter:
                 on_pitch[tid] = point
             else:
                 off_pitch.add(tid)
+        logger.debug(
+            "update: %d detected, %d projectable, %d tracks; on pitch %s, off pitch %s",
+            len(tracked_objects), n_projectable, len(positions),
+            sorted(on_pitch), sorted(off_pitch),
+        )
         return on_pitch, off_pitch
 
     def reset(self) -> None:
         """Forget every track. Call on a video cut."""
         self._tracks.clear()
+        logger.debug("reset: all player position tracks cleared")
 
     def _predict(self, state, covariance):
         state = _TRANSITION @ state

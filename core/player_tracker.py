@@ -8,6 +8,10 @@ from ultralytics import YOLO
 import cv2
 import numpy as np
 
+from core.log import TRACE, get_logger
+
+logger = get_logger(__name__)
+
 # person id in COCO
 PERSON_CLASS = 0
 
@@ -42,6 +46,10 @@ class PlayerTracker:
         self.conf_thres = conf_thres
         self.imgsz = imgsz
         self.device = device
+        logger.debug(
+            "PlayerTracker: model=%s device=%s tracker=%s conf=%.2f imgsz=%d",
+            model_path, device, tracker_config, conf_thres, imgsz,
+        )
 
     def update(self, frame):
         """
@@ -62,6 +70,7 @@ class PlayerTracker:
         objs = []
         r = results[0]
         if r.boxes is None or r.boxes.id is None:
+            logger.trace("update: no tracked people in this frame")
             return objs
 
         boxes, ids, confs = [
@@ -80,6 +89,15 @@ class PlayerTracker:
                 "mask": mask,
             })
 
+        logger.debug("update: %d people (ids=%s)", len(objs),
+                     [int(obj["id"]) for obj in objs])
+        if logger.isEnabledFor(TRACE):
+            for obj in objs:
+                logger.trace(
+                    "update: id=%s bbox=%s conf=%.2f mask=%s",
+                    int(obj["id"]), obj["bbox"].astype(int).tolist(), obj["conf"],
+                    "yes" if obj["mask"] is not None else "no",
+                )
         return objs
 
     @staticmethod
@@ -92,6 +110,7 @@ class PlayerTracker:
         y1, y2 = max(0, min(y1, y2)), min(h, max(y1, y2))
         bbox = np.array([x1, y1, x2, y2], dtype=np.float32)
         if x2 <= x1 or y2 <= y1:
+            logger.trace("clip: dropping empty box after clipping to the frame")
             return bbox, None
 
         mask = np.zeros((y2 - y1, x2 - x1), np.uint8)

@@ -11,6 +11,10 @@ depth Z along the optical axis, then compute the true 3D world position.
 
 import numpy as np
 
+from core.log import get_logger
+
+logger = get_logger(__name__)
+
 # Regulation soccer ball diameter in meters
 BALL_DIAMETER_M = 0.22
 
@@ -73,10 +77,12 @@ def pixel_to_3d(u, v, bbox_width_px, K, R, t, k1=0.0, k2=0.0):
         or None if bbox_width_px ≤ 0
     """
     if bbox_width_px <= 0:
+        logger.trace("pixel_to_3d: non-positive bbox width (%.2f)", bbox_width_px)
         return None
 
     focal_px = float(K[0, 0])
     if focal_px <= 0:
+        logger.trace("pixel_to_3d: non-positive focal length (%.2f)", focal_px)
         return None
 
     # 1. Normalize pixel → undistorted camera coordinates
@@ -123,9 +129,11 @@ def pixel_to_ground(u, v, K, R, t, k1=0.0, k2=0.0):
     """
     origin, direction = pixel_to_ray(u, v, K, R, t, k1, k2)
     if abs(direction[2]) < 1e-10:
+        logger.trace("pixel_to_ground: ray at (%.1f, %.1f) is parallel to the ground", u, v)
         return None
     t_scale = -origin[2] / direction[2]
     if t_scale < 0:
+        logger.trace("pixel_to_ground: ray at (%.1f, %.1f) intersects behind the camera", u, v)
         return None
     pt = origin + t_scale * direction
     return np.array([pt[0], pt[1]], dtype=np.float64)

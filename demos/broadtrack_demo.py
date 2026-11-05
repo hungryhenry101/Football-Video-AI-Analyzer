@@ -14,10 +14,12 @@ os.chdir(PROJECT_ROOT)
 
 import cv2
 from core.broadtrack_calib import BroadTrackCalib
+from core.log import clear_frame_context, configure_logging, set_frame_context
 import torch
 from tqdm import tqdm
 
 if __name__ == '__main__':
+    configure_logging()  # level/file/modules come from the FOOTBALL_LOG_* variables
     KP_WEIGHTS = "models/nbjw_keypoint_model.pt"
     LINE_WEIGHTS = "models/tvcalib_model.pt"
     VIDEO_PATH = "input_vids/test2.mp4"
@@ -37,11 +39,12 @@ if __name__ == '__main__':
         height=height,
     )
 
-    for _ in tqdm(range(total_frames)):
+    for frame_idx in tqdm(range(total_frames)):
         ret, frame = cap.read()
         if not ret:
             break
         frame = cv2.resize(frame, (width, height))
+        set_frame_context(frame_idx)
         calib = calib_engine.estimate(frame)
         calib_engine.draw_pitch_lines(frame, color=(0, 255, 0), thickness=2)
         if calib is not None:
@@ -50,5 +53,6 @@ if __name__ == '__main__':
         cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+    clear_frame_context()
     cv2.destroyAllWindows()
     cap.release()

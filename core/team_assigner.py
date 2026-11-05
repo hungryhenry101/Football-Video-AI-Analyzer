@@ -17,6 +17,10 @@ import numpy as np
 from collections import deque, defaultdict, Counter
 from typing import NamedTuple
 
+from core.log import TRACE, get_logger
+
+logger = get_logger(__name__)
+
 PITCH_LENGTH = 105.0
 
 TEAM_A = 0
@@ -76,6 +80,11 @@ class TeamAssigner:
         self.voted_colours: dict[int, np.ndarray] = {} # id -> mean LAB of the history
         self.voted_assignments: dict[int, Assignment] = {} # id -> voted assignments
         self.off_pitch: set[int] = set() # ids off pitch
+        logger.debug(
+            "TeamAssigner: min_pixels=%d max_samples=%d L_WEIGHT=%.2f "
+            "REF_DIST_FACTOR=%.1f REF_DIST_FLOOR=%.1f",
+            self.min_pixels, self.max_samples, L_WEIGHT, REF_DIST_FACTOR, REF_DIST_FLOOR,
+        )
 
     # ---------------------------------------------------------------- stage 1
 
@@ -92,6 +101,7 @@ class TeamAssigner:
         """
         mask = obj.get("mask")
         if mask is None:
+            logger.trace("torso: id=%s has no mask", int(obj["id"]))
             return None
 
         x1, y1, x2, y2 = (int(p) for p in obj["bbox"])
@@ -103,21 +113,28 @@ class TeamAssigner:
         bottom = int(TORSO_BOTTOM * h)
         band = mask[top:bottom]
         if band.size == 0:
+            logger.trace("torso: id=%s torso band is empty", int(obj["id"]))
             return None
 
         # The border must count as 0: erode's default treats everything outside
         band = cv2.erode(
             band, self._kernel, borderType=cv2.BORDER_CONSTANT, borderValue=0
         )
-        if int(np.count_nonzero(band)) < self.min_pixels:
+        torso_px = int(np.count_nonzero(band))
+        if torso_px < self.min_pixels:
+            logger.trace("torso: id=%s only %d torso px (min %d)",
+                         int(obj["id"]), torso_px, self.min_pixels)
             return None
 
         crop = frame[y1 + top : y1 + bottom, x1:x2]
         if crop.shape[:2] != band.shape:
+            logger.trace("torso: id=%s bbox runs off the frame", int(obj["id"]))
             return None  # bbox ran off the edge of the frame
 
         pixels = crop[band.astype(bool)].reshape(-1, 1, 3)
         if len(pixels) < self.min_pixels:
+            logger.trace("torso: id=%s only %d usable px (min %d)",
+                         int(obj["id"]), len(pixels), self.min_pixels)
             return None
 
         lab = cv2.cvtColor(pixels, cv2.COLOR_BGR2LAB).reshape(-1, 3)
@@ -137,7 +154,12 @@ class TeamAssigner:
         lab = self.torso_lab(obj, frame)
         if lab is None:
             return None
-        return self._dominant_lab(lab)
+        colour = self._dominant_lab(lab)
+        logger.trace(
+            "colour: id=%s torso_px=%d lab=(%.1f, %.1f, %.1f)",
+            int(obj["id"]), len(lab), colour[0], colour[1], colour[2],
+        )
+        return colour
 
     def _dominant_lab(self, lab):
         """
@@ -200,6 +222,10 @@ class TeamAssigner:
         detected = {obj["id"] for obj in tracked_objects}
         self.off_pitch = detected - on_pitch_pos.keys()
         on_pitch = [obj for obj in tracked_objects if obj["id"] in on_pitch_pos]
+        logger.debug(
+            "update: %d detected, %d on pitch, %d off pitch",
+            len(detected), len(on_pitch), len(self.off_pitch),
+        )
 
         for obj in on_pitch:
             colour = self.identify_jersey_colour(obj, frame)
@@ -217,7 +243,9 @@ class TeamAssigner:
         ppl_on_pitch = {obj["id"] for obj in on_pitch}
         # players detected on-pitch, or not detected in this frame
         ids = [tid for tid in self.voted_colours if tid in ppl_on_pitch or tid not in detected]
-        if len(ids) < 2: return None # one player only
+        if len(ids) < 2: # one player only
+            logger.debug("update: clustering skipped, %d candidate player(s)", len(ids))
+            return None
 
         colours = np.stack([self.voted_colours[tid] for tid in ids]) # tid stands for track-id
         features = self.lab_cv2kmeans(colours)
@@ -226,11 +254,6 @@ class TeamAssigner:
 
         dist = np.linalg.norm(features[:, None, :] - centres[None, :, :], axis=2)
         nearest = dist.min(axis=1)
-
-        # print("=== Player ID and Nearest Distance ===")
-        # for i, tid in enumerate(ids):
-        #     print(f"ID: {tid}, Nearest Distance: {nearest[i]:.4f}")
-        # print("=" * 40)
 
         spreads = []
         for cluster in range(len(centres)):
@@ -242,6 +265,11 @@ class TeamAssigner:
         threshold = max(
             REF_DIST_FLOOR,
             REF_DIST_FACTOR * (min(spreads) if spreads else 0.0),
+        )
+        logger.debug(
+            "update: %d players clustered; largest nearest distance %.2f, "
+            "outlier threshold %.2f",
+            len(ids), float(nearest.max()) if len(nearest) else 0.0, threshold,
         )
 
         outliers = {}  # tid -> world position
@@ -266,12 +294,22 @@ class TeamAssigner:
             for tid in outliers:
                 if tid != gk_id:
                     self.assign_acc[tid].append(Assignment(None, REFEREE))
+            logger.debug(
+                "update: outliers %s -> goalkeeper %s, referee(s) %s",
+                sorted(int(tid) for tid in outliers), int(gk_id),
+                sorted(int(tid) for tid in outliers if tid != gk_id),
+            )
 
         # voting the current assignments
         self.voted_assignments = {
             tid: Counter(history).most_common(1)[0][0]
             for tid, history in self.assign_acc.items() if history
         }
+        if logger.isEnabledFor(TRACE):
+            for tid in sorted(self.voted_assignments):
+                assignment = self.voted_assignments[tid]
+                logger.trace("assign: id=%s team=%s role=%s",
+                             int(tid), assignment.team, assignment.role)
 
         # Each team's jersey colour for drawing, remove L's weight
         for team in (TEAM_A, TEAM_B):

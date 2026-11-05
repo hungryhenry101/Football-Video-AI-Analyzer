@@ -38,6 +38,8 @@ from typing import Optional, Sequence
 import cv2
 import numpy as np
 
+from core.log import TRACE, get_logger
+
 # Import order matters on macOS.
 # Ceres pulls in the system OpenMP runtime through OpenBLAS/SuiteSparse, and PyTorch uses its own copy;
 # if Ceres initialises first, libomp aborts.
@@ -50,6 +52,8 @@ from . import _broadtrack
 PITCH_LENGTH = 105.0
 PITCH_WIDTH = 68.0
 CENTER_CIRCLE_RADIUS = 9.15
+
+logger = get_logger(__name__)
 
 
 def pitch_wireframe(delta: float = 1.0) -> list:
@@ -189,11 +193,16 @@ class BroadTrackCalib:
         self._last_result: Optional[dict] = None
         self._last_frame_shape: Optional[tuple] = None
 
-        print(
-            f"BroadTrackCalib initialized (line model on {self._line_model.device}, "
-            f"keypoint model on {self._keypoint_model.device}; expected "
-            f"{self.width}x{self.height}, HD reference {config['hd_width']:.0f}x"
-            f"{config['hd_height']:.0f}, position_mode={config.get('position_mode', 'free')})"
+        logger.info(
+            "BroadTrackCalib initialized (line model on %s, keypoint model on %s; "
+            "expected %dx%d, HD reference %.0fx%.0f, position_mode=%s)",
+            self._line_model.device,
+            self._keypoint_model.device,
+            self.width,
+            self.height,
+            config["hd_width"],
+            config["hd_height"],
+            config.get("position_mode", "free"),
         )
 
     # ------------------------------------------------------------------ core
@@ -224,16 +233,29 @@ class BroadTrackCalib:
 
         line_mask = self._line_model.compute_line_mask(frame)
         box_array = self._normalise_boxes(boxes)
+        logger.trace("estimate: %d player boxes handed to the tracker", len(box_array))
 
         # The extension only calls this when it decides a re-initialisation is
         # worth attempting, which is what keeps the keypoint model off the
         # hot path.
         def keypoints_fn():
-            return keypoints_to_list(self._keypoint_model.compute_keypoints(frame))
+            keypoints = keypoints_to_list(self._keypoint_model.compute_keypoints(frame))
+            if logger.isEnabledFor(TRACE):
+                logger.trace(
+                    "estimate: keypoint model returned %d point ids (%s)",
+                    len(keypoints),
+                    ", ".join(str(point_id) for point_id, _ in keypoints),
+                )
+            return keypoints
 
         native = self._tracker.estimate(frame, line_mask, box_array, keypoints_fn)
 
-        if not native["ok"] or not self._is_usable(native):
+        if not native["ok"]:
+            logger.debug("estimate: tracker solve failed (ok=false)")
+            return None
+        rejection = self._rejection_reason(native)
+        if rejection is not None:
+            logger.debug("estimate: rejecting solve (%s)", rejection)
             return None
 
         K = np.ascontiguousarray(native["K"], dtype=np.float64)
@@ -260,12 +282,25 @@ class BroadTrackCalib:
             "line_mask": line_mask,
         }
         self._last_result = result
+        logger.debug(
+            "estimate: score=%.3f reinit=%s frames_lost=%s focal=%.1f "
+            "pan=%.2f tilt=%.2f roll=%.2f k1=%.4f",
+            result["score"],
+            result["reinit"],
+            result["frames_lost"],
+            result["focal_length"],
+            result["pan_deg"],
+            result["tilt_deg"],
+            result["roll_deg"],
+            result["k1"],
+        )
         return result
 
     def reset(self) -> None:
         """Forget all temporal state. Call this when the video cuts."""
         self._tracker.reset()
         self._last_result = None
+        logger.debug("reset: calibration temporal state cleared")
 
     @property
     def score(self) -> Optional[float]:
@@ -300,15 +335,17 @@ class BroadTrackCalib:
         self._last_frame_shape = shape
         rows, cols = shape
         if (cols, rows) != (self.width, self.height):
-            print(
-                f"BroadTrackCalib: frame is {cols}x{rows} but the tracker was built for "
-                f"{self.width}x{self.height}; adapting (the tracker rescales internally)"
+            logger.warning(
+                "frame is %dx%d but the tracker was built for %dx%d; adapting "
+                "(the tracker rescales internally)",
+                cols, rows, self.width, self.height,
             )
         if abs(cols / rows - 16.0 / 9.0) > 0.02:
-            print(
-                f"BroadTrackCalib: frame aspect {cols / rows:.3f} is not 16:9. The pitch-line "
-                "segmentation model resizes to a fixed shortest side, so the line mask is only "
-                "geometrically consistent with the frame at 16:9."
+            logger.warning(
+                "frame aspect %.3f is not 16:9. The pitch-line segmentation model resizes "
+                "to a fixed shortest side, so the line mask is only geometrically "
+                "consistent with the frame at 16:9.",
+                cols / rows,
             )
 
     @staticmethod
@@ -324,8 +361,8 @@ class BroadTrackCalib:
         return np.ascontiguousarray(array)
 
     @staticmethod
-    def _is_usable(native: dict) -> bool:
-        """Reject a solve the caller could not do anything sensible with.
+    def _rejection_reason(native: dict) -> Optional[str]:
+        """Why a solve cannot be used, or ``None`` when it is fine.
 
         The tracker always returns *something* — it starts from a prior camera
         and only ever improves on it — so unlike PnLCalib there is no "failed to
@@ -333,13 +370,20 @@ class BroadTrackCalib:
         that is what this filters.
         """
         if not np.isfinite(native["K"]).all() or not np.isfinite(native["R"]).all():
-            return False
+            return "non-finite intrinsics or rotation"
         if not np.isfinite(native["t"]).all():
-            return False
+            return "non-finite camera position"
         if native["K"][0, 0] <= 0.0:
-            return False
+            return "non-positive focal length"
         # The camera must sit above the ground plane (z is negative upwards).
-        return native["t"][2] < 0.0
+        if native["t"][2] >= 0.0:
+            return "camera below the ground plane"
+        return None
+
+    @classmethod
+    def _is_usable(cls, native: dict) -> bool:
+        """Whether :meth:`estimate` can return this solve to the caller."""
+        return cls._rejection_reason(native) is None
 
 
 def _project_polyline(polyline: np.ndarray, P: np.ndarray) -> Optional[list]:

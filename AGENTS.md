@@ -38,6 +38,42 @@ A research/learning prototype (not production) that ingests a football match vid
 ### After that
 - run the pipeline: `python main.py --video input_vids/test2.mp4 --max-frames 200 --no-display`
 
+### Logging
+`core/log.py` is the single setup; every module does `logger = get_logger(__name__)`.
+Nothing is printed unless an entry point calls `configure_logging` (`main.py` and both
+demos do; tests stay silent).
+
+Levels, chosen by how much output they produce:
+
+| level | contents |
+|---|---|
+| `TRACE` (5, non-standard) | raw model output, individual detections and ball candidates |
+| `DEBUG` | one summary line per frame, state transitions, decisions |
+| `INFO` (default) | start-up, model loading, video metadata, run summary |
+| `WARNING` | recoverable problems (calibration lost, unreadable frame) |
+
+```bash
+python main.py -v                          # DEBUG for every module
+python main.py -vv                         # TRACE (per detection / candidate)
+python main.py --log-module ball_tracker=TRACE --log-module calib=DEBUG
+python main.py --log-file output/run.log   # file captures DEBUG and above
+python main.py --log-file output/run.log --log-file-level TRACE  # include per-detection
+python main.py --no-log-color
+```
+
+The same switches exist as environment variables, which is how the demos are
+configured: `FOOTBALL_LOG_LEVEL`, `FOOTBALL_LOG_MODULES="ball_tracker=TRACE"`,
+`FOOTBALL_LOG_FILE`, `FOOTBALL_LOG_FILE_LEVEL`, `NO_COLOR`.
+
+`set_frame_context(frame_idx)` (called in each frame loop) tags every record with
+`[f=0042]`, so logs from different modules can be lined up without threading the frame
+index through every call. Module names may be short (`ball_tracker`) or full
+(`core.ball_tracker`); loggers outside this project are hidden unless named explicitly.
+
+When adding logs: use `%s` arguments rather than f-strings, keep per-detection output at
+`TRACE`, per-frame output at `DEBUG`, and guard loops whose arguments are expensive with
+`logger.isEnabledFor(TRACE)`.
+
 ## Architecture
 
 The pipeline has three stages wired together in `main.py`'s loop.

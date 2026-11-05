@@ -2,16 +2,26 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 
 import cv2
 from tqdm import tqdm
 import torch
 
 from core.broadtrack_calib import BroadTrackCalib
+from core.log import (
+    clear_frame_context,
+    configure_logging,
+    get_logger,
+    parse_module_levels,
+    set_frame_context,
+)
 from core.player_tracker import PlayerTracker
 from core.player_position import PlayerPositionFilter
 from core.ball_tracker import OCCLUDED, BallDetector, BallTracker
 from core.team_assigner import TeamAssigner
+
+logger = get_logger(__name__)
 
 BALL_MODEL_PATH = "models/yolo-sn-ball.pt"
 PLAYER_MODEL_PATH = "models/yolo11n-seg.pt"
@@ -29,10 +39,58 @@ def parse_args():
     parser.add_argument("--max-frames", type=int, default=0, help="0 for the whole video")
     parser.add_argument("--out-dir", default="output")
     parser.add_argument("--no-display", action="store_true", help="run headless")
+
+    logging_group = parser.add_argument_group("logging")
+    logging_group.add_argument(
+        "-v", "--verbose", action="count", default=0,
+        help="raise the log level: -v = DEBUG, -vv = TRACE",
+    )
+    logging_group.add_argument(
+        "--log-level", default=None,
+        choices=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"],
+        help="global log level (default INFO, or FOOTBALL_LOG_LEVEL)",
+    )
+    logging_group.add_argument(
+        "--log-module", action="append", default=[], metavar="NAME=LEVEL",
+        help="override one module's level, e.g. ball_tracker=DEBUG (repeatable)",
+    )
+    logging_group.add_argument(
+        "--log-file", default=None,
+        help="also write to this file (DEBUG by default, or FOOTBALL_LOG_FILE)",
+    )
+    logging_group.add_argument(
+        "--log-file-level", default=None,
+        choices=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"],
+        help="file handler level (default DEBUG, or FOOTBALL_LOG_FILE_LEVEL)",
+    )
+    logging_group.add_argument(
+        "--no-log-color", action="store_true", help="disable ANSI colours in the console log",
+    )
     return parser.parse_args()
+
+
+def configure_logging_from_args(args):
+    if args.log_level is not None:
+        level = args.log_level
+    elif args.verbose >= 2:
+        level = "TRACE"
+    elif args.verbose == 1:
+        level = "DEBUG"
+    else:
+        level = None  # configure_logging falls back to the environment / INFO
+
+    configure_logging(
+        level=level,
+        log_file=args.log_file,
+        file_level=args.log_file_level,
+        modules=parse_module_levels(args.log_module) if args.log_module else None,
+        color=False if args.no_log_color else None,
+    )
+
 
 def main():
     args = parse_args()
+    configure_logging_from_args(args)
     display = not args.no_display and bool(os.environ.get("DISPLAY"))
 
     # VIDEO PROCESSING
@@ -44,7 +102,11 @@ def main():
     limit = min(args.max_frames, total_frames) if args.max_frames else total_frames
 
     device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
-    print(f"Using device: {device}")
+    logger.info(
+        "video=%s frames=%d/%d %dx%d @ %.2f fps, device=%s, display=%s",
+        args.video, limit, total_frames, width, height, fps, device,
+        "on" if display else "off",
+    )
 
     # CORE init
     calib_engine = BroadTrackCalib(
@@ -65,6 +127,8 @@ def main():
 
     # Video Output
     os.makedirs(args.out_dir, exist_ok=True)
+    logger.debug("writing cam.mp4 (%dx%d) and bev.mp4 (%dx%d) to %s",
+                 width, height, bev_canvas_w, bev_canvas_h, args.out_dir)
     out_cam = cv2.VideoWriter(os.path.join(args.out_dir, "cam.mp4"),
                               cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
     out_bev = cv2.VideoWriter(os.path.join(args.out_dir, "bev.mp4"),
@@ -79,13 +143,17 @@ def main():
         cv2.moveWindow("bev", 50 + width + 20, 50)
 
     last_calib = None
+    calib_was_valid = True
+    processed = 0
+    started = time.perf_counter()
     try:
         for frame_idx in tqdm(range(limit)):
             ret, frame = cap.read()
             if not ret:
-                tqdm.write("Failed to read frame")
+                logger.error("failed to read frame %d", frame_idx)
                 break
             frame = cv2.resize(frame, (width, height))
+            set_frame_context(frame_idx)
             cam_canva = frame.copy()
             bev_canva = bev_template.copy()
 
@@ -97,10 +165,22 @@ def main():
             new_calib = calib_engine.estimate(frame, boxes=player_boxes)
             calib_valid = new_calib is not None
             if new_calib is not None:
+                if not calib_was_valid:
+                    logger.info("calibration recovered at frame %d", frame_idx)
                 last_calib = new_calib
                 calib = new_calib
+                calib_was_valid = True
             else:
-                tqdm.write("Failed to estimate calib")
+                # The first failure is worth a warning; the following ones are
+                # the same event and would drown the log.
+                if calib_was_valid:
+                    logger.warning(
+                        "calibration lost at frame %d; reusing the last camera "
+                        "(or skipping the frame if there is none yet)", frame_idx,
+                    )
+                else:
+                    logger.debug("calibration still unavailable")
+                calib_was_valid = False
                 calib = last_calib
             if calib is None:
                 continue
@@ -140,6 +220,13 @@ def main():
                 else:
                     cv2.circle(bev_canva, (px, py), 5, (0, 255, 255), -1)  # yellow
 
+            logger.debug(
+                "frame: %d players on pitch, %d ball candidate(s); ball state=%s pred=%s",
+                len(on_pitch_pos), len(ball_candidates), ball_tracker.state,
+                "-" if prediction is None else f"({prediction[0]:.2f}, {prediction[1]:.2f})",
+            )
+            processed += 1
+
             # Camera Plane
             calib_engine.draw_pitch_lines(cam_canva, color=(0, 255, 0), thickness=2)
             player_tracker.draw_tracks(cam_canva, player_dets)
@@ -163,11 +250,18 @@ def main():
             if cv2.waitKey(delay) & 0xFF == ord("q"):
                 break
     finally:
+        clear_frame_context()
         out_cam.release()
         out_bev.release()
         cap.release()
         if display:
             cv2.destroyAllWindows()
+
+    elapsed = time.perf_counter() - started
+    logger.info(
+        "processed %d frame(s) in %.1fs (%.2f fps)",
+        processed, elapsed, processed / elapsed if elapsed > 0 else 0.0,
+    )
     return 0
 
 if __name__ == "__main__":

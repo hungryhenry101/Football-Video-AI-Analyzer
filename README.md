@@ -83,6 +83,9 @@ Lucas-Kanade 光流关联都留在 C++，两个检测网络则复用进程中已
 5. 在 main.py 中修改几个 weight 路径和 `VIDEO_PATH` 为你的文件路径
 6. 运行 main.py，弹出 cam视角、bev视角 窗口
 
+   加 `-v` 输出每帧调试日志，`-vv` 输出逐检测（TRACE）日志。按模块开关
+   （`--log-module ball_tracker=TRACE`）和日志文件见 [Logging](AGENTS.md#logging)。
+
 ---
 
 ## TODO
