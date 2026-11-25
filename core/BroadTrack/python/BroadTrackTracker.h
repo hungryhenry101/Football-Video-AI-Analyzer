@@ -25,8 +25,11 @@
 #include <opencv2/core.hpp>
 #include <opencv2/video/tracking.hpp>
 
+// Camera is a member below, so its definition is needed here, not just a
+// forward declaration.
+#include "Camera.h"
+
 class CameraTracker;
-class Camera;
 class Point3D;
 
 namespace broadtrack
@@ -49,6 +52,13 @@ struct Config
     // mapped into this space, so the caller may hand in any frame size.
     double hd_width = 1920.0;
     double hd_height = 1080.0;
+
+    // Physical pitch size in metres. BroadTrack's solver, line-IoU score and
+    // wireframe all use it; the default is the adult FIFA size. Only the outer
+    // length/width changes -- penalty areas, goals and the centre circle keep
+    // their regulation sizes, as on a youth pitch.
+    double pitch_length = 105.0;
+    double pitch_width = 68.0;
 
     // Lucas-Kanade ground correspondences (BroadTrack's "optical flow" prior).
     bool optical_flow = true;
@@ -127,6 +137,19 @@ public:
     // Drop all temporal state (camera, optical-flow points, lost counter).
     void reset();
 
+    // Start from a known camera instead of the default broadcast prior.
+    // K/R/t are in the caller's frame resolution (t is the camera centre in
+    // world metres); K is converted to the internal HD reference space.
+    // `fix_position` pins the camera centre, k1 and roll for a fixed PTZ
+    // camera, leaving pan/tilt/focal to the per-frame solve.
+    void setCamera(const std::array<double, 9> &K,
+                   const std::array<double, 9> &R,
+                   const std::array<double, 3> &t,
+                   double k1,
+                   int frameWidth,
+                   int frameHeight,
+                   bool fixPosition = true);
+
     Config config;
 
 private:
@@ -147,6 +170,18 @@ private:
 
     CameraTracker *_tracker = nullptr;
     Camera *_priorCamera = nullptr;
+
+    // Last finite camera, used to keep a numerically broken Ceres solve from
+    // propagating NaN into every downstream projection.
+    Camera _lastGoodCamera;
+    bool _hasLastGoodCamera = false;
+
+    // Set by setCamera(fixPosition=true). While an anchor is active the
+    // low-score path must NOT reset the whole camera to the prior: the camera
+    // may have panned/zoomed since the anchor, and an orientation reset would
+    // throw away the only good estimate. The position is already pinned.
+    bool _hasCameraAnchor = false;
+    double _anchorFocal = 0.0;
 
     bool _initialised = false;
     int _framesLost = 0;

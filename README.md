@@ -29,6 +29,28 @@ Lucas-Kanade 光流关联都留在 C++，两个检测网络则复用进程中已
 [`core/BroadTrack/README.md`](core/BroadTrack/README.md)。
 ![Pitch Detection](docs/pnl.png)
 
+**手动引导（Manual bootstrap）。** 当自动关键点初始化失败时（低机位、部分青少年比赛），
+可以手动标注一帧并将相机传给 BroadTrack：
+
+```bash
+python -m core.pitchcal.cli annotate \
+    --video input_vids/test2.mp4 --frame 0 \
+    --out config/anchors/test2.json --pitch 105x68
+python main.py --video input_vids/test2.mp4 --anchor config/anchors/test2.json \
+    --start-frame 0 --max-frames 200 --no-display
+```
+
+标注器是 PitchCal 项目的裁剪版本（`core/pitchcal`）：点击命名地标和/或描出可见白线，
+按 `w` 保存。`core/anchor_bootstrap.py` 会把锚点（z 向上）转换为运行时相机并校验；
+地面投影直接使用锚点单应矩阵，因此第一个锚点帧与标注结果一致。
+
+默认 `--calib-backend pitchcal` 使用 PitchCal 的 LK/SIFT 地面跟踪器逐帧传递相机，
+并每隔 `--line-every` 帧（默认 4）运行一次 LSD + 白线证据，用于 line-hit 置信度和
+带门限的单应矩阵修正。BroadTrack 只在初始化以及可选的 `--broadtrack-every N`
+关键帧上运行。`--calib-backend broadtrack` 恢复逐帧语义线分割 + Ceres 求解。
+球员检测由 `--player-interval`（默认 0.15 秒）控制；跳过的帧复用上一次的检测框，
+供标定掩膜、BEV 点和球队分配使用。
+
 ### II. 球员识别跟踪
 
 `core/player_tracker.py`

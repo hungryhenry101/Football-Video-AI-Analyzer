@@ -5,7 +5,7 @@ from ultralytics import YOLO
 from filterpy.kalman import KalmanFilter
 from scipy.stats import chi2
 from core.log import TRACE, get_logger
-from core.projection_utils import pixel_to_ground, pixel_to_3d
+from core.projection_utils import homography_pixel_to_ground, pixel_to_ground, pixel_to_3d
 
 logger = get_logger(__name__)
 
@@ -49,6 +49,10 @@ class BallTrackerConfig:
     reacquire_radius_m: float = 3.0
     static_radius_m: float = 0.75
     pitch_margin_m: float = 1.0
+    # Outer pitch size, used by the bounds gate.  A manual anchor may describe a
+    # youth pitch; the default stays the adult 105x68.
+    pitch_length: float = PITCH_HALF_LENGTH * 2.0
+    pitch_width: float = PITCH_HALF_WIDTH * 2.0
     foot_band_frac: float = 0.25
     ball_max_speed_mps: float = 45.0
     process_noise_xy: float = 0.05
@@ -76,10 +80,16 @@ class BallDetector:
             logger.trace("detect: no ball boxes")
         return detections
 
-    def get_candidates(self, detections, K, R, t):
+    def get_candidates(self, detections, K=None, R=None, t=None, H=None):
         """Turn YOLO output into candidates with BEV ground positions.
         the tracker uses z=0 projection.
+
+        Pass either ``H`` (world->image ground homography, the pitchcal LK
+        path) or ``K, R, t`` (the camera form).  ``z_est`` is diagnostic and
+        needs the camera; it stays ``None`` on the homography path.
         """
+        if H is None and (K is None or R is None or t is None):
+            raise ValueError("get_candidates needs either H or K, R, t")
         if not detections:
             return []
         result = detections[0]
@@ -97,7 +107,8 @@ class BallDetector:
                 continue
             u, v = (x1 + x2) / 2, (y1 + y2) / 2
 
-            ground = pixel_to_ground(u, v, K, R, t)
+            ground = (homography_pixel_to_ground(u, v, H) if H is not None
+                      else pixel_to_ground(u, v, K, R, t))
             if ground is None or not np.isfinite(ground).all():
                 gx = gy = None
             else:
@@ -106,12 +117,13 @@ class BallDetector:
                     gx = gy = None
 
             z_est = None
-            try:
-                point3d = pixel_to_3d(u, v, width, K, R, t)
-            except (np.linalg.LinAlgError, ValueError):
-                point3d = None
-            if point3d is not None and np.isfinite(point3d).all():
-                z_est = float(point3d[2])
+            if K is not None and R is not None and t is not None:
+                try:
+                    point3d = pixel_to_3d(u, v, width, K, R, t)
+                except (np.linalg.LinAlgError, ValueError):
+                    point3d = None
+                if point3d is not None and np.isfinite(point3d).all():
+                    z_est = float(point3d[2])
 
             candidates.append(BallCandidate(
                 u=u, v=v, x=gx, y=gy,
@@ -650,8 +662,8 @@ class BallTracker:
         if not (np.isfinite(cand.x) and np.isfinite(cand.y)):
             return False, False, "unprojectable", None
         margin = self.config.pitch_margin_m
-        if (abs(cand.x) > PITCH_HALF_LENGTH + margin
-                or abs(cand.y) > PITCH_HALF_WIDTH + margin):
+        if (abs(cand.x) > self.config.pitch_length / 2.0 + margin
+                or abs(cand.y) > self.config.pitch_width / 2.0 + margin):
             return False, False, "outside_pitch", None
         if (not np.isfinite(cand.width_px) or not np.isfinite(cand.height_px)
                 or cand.width_px <= 0 or cand.height_px <= 0):

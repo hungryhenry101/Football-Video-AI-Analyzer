@@ -10,7 +10,7 @@ from typing import NamedTuple
 import numpy as np
 
 from core.log import TRACE, get_logger
-from core.projection_utils import pixel_to_ground
+from core.projection_utils import homography_pixel_to_ground, pixel_to_ground
 
 logger = get_logger(__name__)
 
@@ -49,16 +49,18 @@ def foot_point(obj) -> tuple:
     return (x1 + x2) / 2.0, y2
 
 
-def inside_pitch(point) -> bool:
+def inside_pitch(point, pitch_length=PITCH_LENGTH, pitch_width=PITCH_WIDTH) -> bool:
     """Whether a world-metre ground point is on the pitch, within ``PITCH_MARGIN``.
     Args:
         point: ``(x, y)`` in metres, or None.
+        pitch_length, pitch_width: outer pitch size; a manual anchor may
+            describe a youth pitch.
     """
     if point is None:
         return False
     return (
-        abs(float(point[0])) <= PITCH_LENGTH / 2 + PITCH_MARGIN
-        and abs(float(point[1])) <= PITCH_WIDTH / 2 + PITCH_MARGIN
+        abs(float(point[0])) <= pitch_length / 2 + PITCH_MARGIN
+        and abs(float(point[1])) <= pitch_width / 2 + PITCH_MARGIN
     )
 
 
@@ -77,11 +79,15 @@ class PlayerPositionFilter:
         measurement_noise: float = 0.25,
         initial_covariance: float = 1.0,
         max_coast: int = 25,
+        pitch_length: float = PITCH_LENGTH,
+        pitch_width: float = PITCH_WIDTH,
     ):
         self.process_noise = float(process_noise)
         self.measurement_noise = float(measurement_noise)
         self.initial_covariance = float(initial_covariance)
         self.max_coast = int(max_coast)
+        self.pitch_length = float(pitch_length)
+        self.pitch_width = float(pitch_width)
 
         self._q = np.eye(4) * self.process_noise
         self._r = np.eye(2) * self.measurement_noise
@@ -93,19 +99,24 @@ class PlayerPositionFilter:
             self.initial_covariance, self.max_coast,
         )
 
-    def update(self, tracked_objects, K, R, t):
+    def update(self, tracked_objects, K=None, R=None, t=None, H=None):
         """Filter this frame's detections
         Args:
             tracked_objects: as returned by ``PlayerTracker.update``.
-            K, R, t: the calibration for current frame.
+            K, R, t: the calibration for current frame (camera form).
+            H: world->image ground homography. Use this instead of K/R/t when
+                the calibration is tracked as a homography (pitchcal).
         Returns:
             ``(on_pitch, off_pitch)``:
             ``on_pitch`` is ``{track_id: (x, y)}`` in world metres; ``off_pitch`` is the set of ids off pitch
         """
+        if H is None and (K is None or R is None or t is None):
+            raise ValueError("update needs either H or K, R, t")
         measured = {}
         for obj in tracked_objects:
             u, v = foot_point(obj)
-            point = pixel_to_ground(u, v, K, R, t)
+            point = (homography_pixel_to_ground(u, v, H) if H is not None
+                     else pixel_to_ground(u, v, K, R, t))
             if point is None or not np.isfinite(point).all():
                 logger.trace("update: id=%s foot pixel (%.1f, %.1f) is unprojectable",
                              int(obj["id"]), u, v)
@@ -144,7 +155,7 @@ class PlayerPositionFilter:
         for obj in tracked_objects:
             tid = int(obj["id"])
             point = positions.get(tid)
-            if inside_pitch(point):
+            if inside_pitch(point, self.pitch_length, self.pitch_width):
                 on_pitch[tid] = point
             else:
                 off_pitch.add(tid)

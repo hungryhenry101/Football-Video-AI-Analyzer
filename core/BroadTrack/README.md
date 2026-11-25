@@ -88,6 +88,33 @@ The models can be downloaded from https://github.com/evs-broadcast/BroadTrack/tr
   builds the static pitch image, `world_to_bev_px(x, y)` maps world metres to BEV
   pixels, and `draw_pitch_lines()` projects the markings with a given `P`.
 
+### Starting from a known camera (manual bootstrap)
+
+`BroadTrackCalib.set_camera(K, R, t, k1=0.0, frame_width=..., frame_height=...,
+fix_position=True)` seeds the tracker instead of waiting for the keypoint
+bootstrap. `K, R, t` are in the caller's frame resolution and the project's
+world frame (`t` is the camera centre, `z` is negative above the ground).
+`fix_position=True` pins the centre, `k1` and roll, so the per-frame solve only
+follows pan/tilt/zoom. `main.py --anchor` builds these values from a pitchcal
+anchor via `core.anchor_bootstrap`; see AGENTS.md.
+
+The camera model was extended with an explicit principal-point offset
+(`Camera::setPrincipalPointOffset`). Upstream assumes a centred principal point;
+a hand-fitted ground homography (and a cropped/virtual camera) can require an
+offset, and without it the best centred camera can be tens of pixels away from
+the annotation on the first frame. `set_camera` accepts such a `K` and the
+solver keeps the offset fixed while optimising pan/tilt/focal. `K` still comes
+back in the caller's resolution with its `cx, cy` intact. Existing callers that
+build cameras from a resolution get the centred point as before
+(`setPixelResolution` resets it, `setPrincipalPoint` still sets resolution =
+2 * principal).
+
+The pitch size is part of the tracker config:
+`BroadTrackCalib(..., pitch_length=90.0, pitch_width=64.0)` forwards it to the
+C++ `SoccerPitch3D`, the line-IoU score and `pitch_wireframe(length, width)`.
+Only the outer dimensions change; penalty areas, goals and the centre circle
+keep their regulation sizes.
+
 ### Gotchas
 
 - **16:9 matters.** The segmentation model resizes to a fixed shortest side, so

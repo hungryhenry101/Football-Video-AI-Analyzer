@@ -56,11 +56,16 @@ CENTER_CIRCLE_RADIUS = 9.15
 logger = get_logger(__name__)
 
 
-def pitch_wireframe(delta: float = 1.0) -> list:
+def pitch_wireframe(delta: float = 1.0,
+                    length: float = PITCH_LENGTH,
+                    width: float = PITCH_WIDTH) -> list:
     """List of (N, 3) world-metre polylines.
-    Comes from BroadTrack's own ``SoccerPitch3D::getWireframe``
+    Comes from BroadTrack's own ``SoccerPitch3D::getWireframe``.
+    ``length``/``width`` only change the outer dimensions; the markings keep
+    their regulation sizes, as on a youth pitch.
     """
-    return [np.asarray(polyline, dtype=np.float64) for polyline in _broadtrack.pitch_wireframe(delta)]
+    return [np.asarray(polyline, dtype=np.float64)
+            for polyline in _broadtrack.pitch_wireframe(delta, length, width)]
 
 
 class PitchGeometry:
@@ -76,7 +81,8 @@ class PitchGeometry:
         self.length = float(length)
         self.width = float(width)
         self.bev_scale = float(bev_scale)
-        self._wireframe = list(wireframe) if wireframe is not None else pitch_wireframe()
+        self._wireframe = (list(wireframe) if wireframe is not None
+                           else pitch_wireframe(length=self.length, width=self.width))
 
     @property
     def wireframe(self) -> list:
@@ -187,6 +193,8 @@ class BroadTrackCalib:
         config = dict(tracker_config or {})
         config.setdefault("hd_width", 1920.0)
         config.setdefault("hd_height", 1080.0)
+        config.setdefault("pitch_length", float(pitch_length))
+        config.setdefault("pitch_width", float(pitch_width))
         self._tracker = _broadtrack.Tracker(config)
         self._tracker_config = config
 
@@ -301,6 +309,52 @@ class BroadTrackCalib:
         self._tracker.reset()
         self._last_result = None
         logger.debug("reset: calibration temporal state cleared")
+
+    def set_camera(
+        self,
+        K: np.ndarray,
+        R: np.ndarray,
+        t: np.ndarray,
+        k1: float = 0.0,
+        *,
+        frame_width: Optional[int] = None,
+        frame_height: Optional[int] = None,
+        fix_position: bool = True,
+    ) -> None:
+        """Bootstrap the tracker from a known camera.
+
+        Args:
+            K: 3x3 intrinsics in the caller's frame resolution. The principal
+                point may be off-centre: a hand-fitted anchor homography can
+                require it, and the tracker keeps it fixed while solving.
+            R: 3x3 world->camera rotation (world frame z points *down*, as
+                described in the class docstring).
+            t: camera centre in world metres.
+            k1: first radial-distortion coefficient.
+            frame_width, frame_height: resolution ``K`` was measured at;
+                defaults to the constructor's ``width``/``height``.
+            fix_position: pin the camera centre, k1 and roll. Use this for a
+                fixed PTZ camera marked by a human; the per-frame solve then
+                only follows pan/tilt and zoom. Pass ``False`` for a camera
+                that physically moves.
+
+        A manual anchor from :mod:`core.anchor_bootstrap` is the intended
+        producer. After this call the tracker runs from the anchor instead of
+        BroadTrack's default broadcast prior.
+        """
+        width = int(frame_width or self.width)
+        height = int(frame_height or self.height)
+        self._tracker.set_camera(
+            np.asarray(K, dtype=np.float64),
+            np.asarray(R, dtype=np.float64),
+            np.asarray(t, dtype=np.float64),
+            float(k1), width, height, bool(fix_position),
+        )
+        self._last_result = None
+        logger.info(
+            "set_camera: bootstrapped at %dx%d (f=%.1f, fix_position=%s)",
+            width, height, float(np.asarray(K, dtype=np.float64)[0, 0]), fix_position,
+        )
 
     @property
     def score(self) -> Optional[float]:

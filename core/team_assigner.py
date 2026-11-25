@@ -63,9 +63,11 @@ class TeamAssigner:
         self,
         min_pixels: int = 30,
         max_samples: int = 1000,
+        pitch_length: float = PITCH_LENGTH,
     ):
         self.min_pixels = min_pixels
         self.max_samples = max_samples
+        self.pitch_length = float(pitch_length)
 
         self._kernel = np.ones((3, 3), np.uint8)
         self._criteria = (
@@ -284,7 +286,7 @@ class TeamAssigner:
             if position is not None:
                 outliers[tid] = position
         if outliers:
-            goal = np.array([PITCH_LENGTH / 2, 0.0])
+            goal = np.array([self.pitch_length / 2, 0.0])
 
             gk_id = min(outliers,
                 key=lambda tid: np.linalg.norm(outliers[tid] - goal),

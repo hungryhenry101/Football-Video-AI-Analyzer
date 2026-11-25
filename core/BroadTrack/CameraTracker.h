@@ -42,7 +42,10 @@ class CameraTracker
 {
 
 public:
-    CameraTracker();
+    // The pitch size is configurable because youth pitches are not 105x68.
+    // The markings' absolute sizes stay regulation-sized inside SoccerPitch3D.
+    explicit CameraTracker(double pitchLength = SoccerPitch3D::DEFAULT_LENGTH,
+                           double pitchWidth = SoccerPitch3D::DEFAULT_WIDTH);
 
     std::tuple<double, Camera> update(const cv::Mat &semLinesMask,
                                       const std::vector<std::pair<Point3D, Point2D>> &pitchProjections,
@@ -72,6 +75,13 @@ public:
     Camera getCamera() const;
 
     void setCamera(const Camera &camera);
+
+    // Pin pan/tilt/roll? No: pin the camera *position*, k1 and roll from a
+    // manual bootstrap.  The position is removed from the parameter block, so
+    // the per-frame solve can only change pan, tilt and focal.  This is
+    // stronger than the soft tripod residual and is what a manually marked
+    // fixed camera wants.
+    void setCameraAnchor(const Point3D &position, double k1, double roll);
 
     void setTripodInfo(const Point3D &center, double radius);
 

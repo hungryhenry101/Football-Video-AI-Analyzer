@@ -165,6 +165,21 @@ def test_a_detection_off_the_ground_plane_is_not_on_pitch():
 # -------------------------------------------------------------- on-pitch gate
 
 
+def test_update_accepts_the_equivalent_homography():
+    """The pitchcal path projects through H; the result must match K/R/t."""
+    from core.anchor_bootstrap import homography_from_camera
+
+    H = homography_from_camera(K, R, T)
+    detection_ = detection(3, (2.0, 3.0))
+    camera_result = PlayerPositionFilter().update([detection_], K, R, T)[0]
+    homography_result = PlayerPositionFilter().update([detection_], H=H)[0]
+
+    assert homography_result.keys() == camera_result.keys()
+    for track_id in camera_result:
+        assert homography_result[track_id] == pytest.approx(
+            camera_result[track_id], abs=1e-6)
+
+
 def test_inside_pitch_grants_the_margin_on_every_line():
     assert inside_pitch((0.0, 0.0))
     assert inside_pitch((PITCH_LENGTH / 2 + PITCH_MARGIN, 0.0))

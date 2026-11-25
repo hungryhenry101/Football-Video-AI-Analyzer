@@ -156,6 +156,7 @@ Vector3x1 Camera::getPanTiltRollFromOrientation(const Matrix3x3 &cameraOrientati
 Camera::Camera(const cv::Size &pixelResolution)
 {
     _pixelResolution = pixelResolution;
+    _principalPoint = Point2D(pixelResolution.width / 2.0, pixelResolution.height / 2.0);
     _clippingCircleRadius = getLargestRadiusInNormalizedImagePlane();
 }
 
@@ -218,6 +219,15 @@ Camera &Camera::setHorizontalFieldOfView(double horizontalFieldOfView)
 Camera &Camera::setPrincipalPoint(const Point2D &principalPoint)
 {
     _pixelResolution = cv::Size(2.0 * principalPoint.x(), 2.0 * principalPoint.y());
+    _principalPoint = principalPoint;
+
+    return *this;
+}
+
+Camera &Camera::setPrincipalPointOffset(const Point2D &principalPoint)
+{
+    _principalPoint = principalPoint;
+    _clippingCircleRadius = getLargestRadiusInNormalizedImagePlane();
 
     return *this;
 }
@@ -225,6 +235,7 @@ Camera &Camera::setPrincipalPoint(const Point2D &principalPoint)
 Camera &Camera::setPixelResolution(const cv::Size &pixelResolution)
 {
     _pixelResolution = pixelResolution;
+    _principalPoint = Point2D(pixelResolution.width / 2.0, pixelResolution.height / 2.0);
 
     return *this;
 }
@@ -235,6 +246,7 @@ Camera &Camera::setCalibration(const Matrix3x3 &calibrationMatrix)
 
     Point2D principalPoint(calibrationMatrix[2], calibrationMatrix[5], calibrationMatrix[8]);
     _pixelResolution = cv::Size(2.0 * principalPoint.x(), 2.0 * principalPoint.y());
+    _principalPoint = principalPoint;
 
     return *this;
 }
@@ -363,7 +375,7 @@ double Camera::getHorizontalFieldOfView() const
 
 Point2D Camera::getPrincipalPoint() const
 {
-    return Point2D(_pixelResolution.width / 2.0, _pixelResolution.height / 2.0);
+    return _principalPoint;
 }
 
 cv::Size Camera::getPixelResolution() const
@@ -373,8 +385,8 @@ cv::Size Camera::getPixelResolution() const
 
 Matrix3x3 Camera::getCalibration() const
 {
-    return Matrix3x3(_focalLength, 0.0, _pixelResolution.width / 2.0,
-                     0.0, _focalLength, _pixelResolution.height / 2.0,
+    return Matrix3x3(_focalLength, 0.0, _principalPoint.x(),
+                     0.0, _focalLength, _principalPoint.y(),
                      0.0, 0.0, 1.0);
 }
 

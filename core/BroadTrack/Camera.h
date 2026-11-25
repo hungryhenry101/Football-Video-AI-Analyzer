@@ -78,6 +78,13 @@ public:
 
     Camera &setPrincipalPoint(const Point2D &principalPoint);
 
+    // Set the principal point *without* changing the declared pixel resolution.
+    // Upstream BroadTrack assumes a centred principal point; a manually marked
+    // ground homography can require an offset, and a virtual/cropped camera
+    // genuinely has one.  The frame size stays what it is, so clipping and FOV
+    // continue to use the real image bounds.
+    Camera &setPrincipalPointOffset(const Point2D &principalPoint);
+
     Camera &setPixelResolution(const cv::Size &pixelResolution);
 
     Camera &setCalibration(const Matrix3x3 &calibrationMatrix);
@@ -183,6 +190,7 @@ private:
     std::vector<double> _correctionCoefficients = {};
     double _focalLength = 1.0;
     cv::Size _pixelResolution;
+    Point2D _principalPoint;
     double _clippingCircleRadius;
 };
 

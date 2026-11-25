@@ -32,6 +32,32 @@ coordinate frame, same drawing helpers. See
 [`core/BroadTrack/README.md`](core/BroadTrack/README.md).
 ![Pitch Detection](docs/pnl.png)
 
+**Manual bootstrap.** When the automatic keypoint bootstrap fails (low camera,
+some youth footage), mark one frame by hand and seed the tracker from it:
+
+```bash
+python -m core.pitchcal.cli annotate \
+    --video input_vids/test2.mp4 --frame 0 \
+    --out config/anchors/test2.json --pitch 105x68
+python main.py --video input_vids/test2.mp4 --anchor config/anchors/test2.json \
+    --start-frame 0 --max-frames 200 --no-display
+```
+
+The annotator is a vendored subset of the PitchCal project (`core/pitchcal`):
+click named landmarks and/or trace the visible white lines, then press `w`.
+`core/anchor_bootstrap.py` converts the anchor (z-up) into the runtime camera
+and validates it; the anchor's homography is used directly for ground
+projection, so the first anchored frame matches the annotation.
+
+The default `--calib-backend pitchcal` carries the camera with PitchCal's
+LK/SIFT ground tracker and runs its LSD + white-paint evidence every
+`--line-every` frames (default 4) for line-hit confidence and a gated
+homography correction. BroadTrack runs only to bootstrap and at optional
+`--broadtrack-every N` keyframes. `--calib-backend broadtrack` restores the
+per-frame semantic line-segmentation + Ceres solve. Player detection is
+throttled by `--player-interval` (default 0.15 s); skipped frames reuse the
+last boxes for the calibration masks, BEV dots and team assignment.
+
 ### II. Player Detection and Tracking
 
 `core/player_tracker.py`

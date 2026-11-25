@@ -96,22 +96,23 @@ double getCurveParameter(const Point3D &point3D, const Polyline3D &polyline3D)
     return closestCurvePointParameter;
 }
 
-CameraTracker::CameraTracker() : _pointExtractor(0.5, 10),
-                                 _positionAnchored(false),
-                                 _referencePosition(0., 0., 0.),
-                                 _k1Anchored(false),
-                                 _referenceK1(0.0),
-                                 _rollAnchored(false),
-                                 _referenceRoll(0.0),
-                                 _anchorFrameCount(0),
-                                 _anchorPositionSumX(0.),
-                                 _anchorPositionSumY(0.),
-                                 _anchorPositionSumZ(0.),
-                                 _anchorK1Sum(0.),
-                                 _anchorRollSum(0.)
+CameraTracker::CameraTracker(double pitchLength, double pitchWidth)
+    : _soccerPitch3D(pitchLength, pitchWidth),
+      _pointExtractor(0.5, 10),
+      _positionAnchored(false),
+      _referencePosition(0., 0., 0.),
+      _k1Anchored(false),
+      _referenceK1(0.0),
+      _rollAnchored(false),
+      _referenceRoll(0.0),
+      _anchorFrameCount(0),
+      _anchorPositionSumX(0.),
+      _anchorPositionSumY(0.),
+      _anchorPositionSumZ(0.),
+      _anchorK1Sum(0.),
+      _anchorRollSum(0.)
 {
     _lambda = 0.;
-    _soccerPitch3D = SoccerPitch3D();
 }
 
 std::tuple<double, Camera> CameraTracker::update(const cv::Mat &semLinesMask,
@@ -303,7 +304,7 @@ std::tuple<double, Camera> CameraTracker::update(const cv::Mat &semLinesMask,
 
     _camera.setOrientation(orientationMatrix)
         .setPosition(positionVector)
-        .setPrincipalPoint(principalPoint)
+        .setPrincipalPointOffset(principalPoint)
         .setFocalLength(focalLength)
         .setRadialDistortion(radialDistortion);
 
@@ -483,6 +484,16 @@ Camera CameraTracker::getCamera() const
 void CameraTracker::setCamera(const Camera &camera)
 {
     _camera = camera;
+}
+
+void CameraTracker::setCameraAnchor(const Point3D &position, double k1, double roll)
+{
+    _positionAnchored = true;
+    _referencePosition = position;
+    _k1Anchored = true;
+    _referenceK1 = k1;
+    _rollAnchored = true;
+    _referenceRoll = roll;
 }
 
 void CameraTracker::setTripodInfo(const Point3D &center, double radius)
@@ -672,7 +683,7 @@ void CameraTracker::reinit(const std::vector<std::pair<SoccerPitch3D::PointID, s
         Camera hypothesis;
         hypothesis.setPanTiltRoll(Vector3x1(pan, tilt, 0.))
             .setPosition(Vector3x1(_tripodCenter.x(), _tripodCenter.y(), _tripodCenter.z()))
-            .setPrincipalPoint(_camera.getPrincipalPoint())
+            .setPrincipalPointOffset(_camera.getPrincipalPoint())
             .setFocalLength(focal_length);
 
         double currentReprojectionError;
@@ -701,7 +712,7 @@ void CameraTracker::reinit(const std::vector<std::pair<SoccerPitch3D::PointID, s
             Camera guidedHypothesis;
             guidedHypothesis.setPanTiltRoll(Vector3x1(pan, tilt, 0.))
                 .setPosition(Vector3x1(_tripodCenter.x(), _tripodCenter.y(), _tripodCenter.z()))
-                .setPrincipalPoint(_camera.getPrincipalPoint())
+                .setPrincipalPointOffset(_camera.getPrincipalPoint())
                 .setFocalLength(focal_length);
             double guidedReprojectionError;
             double guidedInlierError;

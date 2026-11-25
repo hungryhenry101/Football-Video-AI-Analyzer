@@ -16,6 +16,7 @@
 
 #include <opencv2/core.hpp>
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -44,6 +45,8 @@ Config configFromDict(const py::dict &dict)
     Config config;
     config.hd_width = dictValue<double>(dict, "hd_width", config.hd_width);
     config.hd_height = dictValue<double>(dict, "hd_height", config.hd_height);
+    config.pitch_length = dictValue<double>(dict, "pitch_length", config.pitch_length);
+    config.pitch_width = dictValue<double>(dict, "pitch_width", config.pitch_width);
     config.optical_flow = dictValue<bool>(dict, "optical_flow", config.optical_flow);
     config.radial_distortion = dictValue<bool>(dict, "radial_distortion", config.radial_distortion);
     config.position_mode = dictValue<std::string>(dict, "position_mode", config.position_mode);
@@ -117,6 +120,32 @@ std::vector<cv::Rect2d> boxesFromArray(const py::array &array)
     return boxes;
 }
 
+std::array<double, 9> array9FromArray(const py::array &array, const char *name)
+{
+    auto contiguous = py::array_t<double, py::array::c_style | py::array::forcecast>(array);
+    if (contiguous.size() != 9)
+    {
+        throw std::invalid_argument(std::string(name) + " must have exactly 9 values");
+    }
+    std::array<double, 9> out{};
+    const double *data = contiguous.data();
+    std::copy(data, data + 9, out.begin());
+    return out;
+}
+
+std::array<double, 3> array3FromArray(const py::array &array, const char *name)
+{
+    auto contiguous = py::array_t<double, py::array::c_style | py::array::forcecast>(array);
+    if (contiguous.size() != 3)
+    {
+        throw std::invalid_argument(std::string(name) + " must have exactly 3 values");
+    }
+    std::array<double, 3> out{};
+    const double *data = contiguous.data();
+    std::copy(data, data + 3, out.begin());
+    return out;
+}
+
 py::array_t<double> matrix3(const std::array<double, 9> &values)
 {
     py::array_t<double> out(py::array::ShapeContainer{3, 3});
@@ -175,9 +204,11 @@ py::dict resultToDict(const Result &result)
     return out;
 }
 
-py::list pitchWireframe(double delta)
+py::list pitchWireframe(double delta,
+                        double length = SoccerPitch3D::DEFAULT_LENGTH,
+                        double width = SoccerPitch3D::DEFAULT_WIDTH)
 {
-    SoccerPitch3D pitch;
+    SoccerPitch3D pitch(length, width);
     py::list out;
     for (const Polyline3D &polyline : pitch.getWireframe(delta))
     {
@@ -218,8 +249,29 @@ PYBIND11_MODULE(_broadtrack, m)
             "keypoints_fn: zero-argument callable returning [(point_id, [(x, y), ...]), ...]\n"
             "    in the caller's resolution; invoked only when a re-initialisation is needed.\n\n"
             "The GIL is held for the whole call, including the keypoints_fn callback.")
-        .def("reset", &Tracker::reset, "Drop all temporal state (camera, optical flow, lost counter).");
+        .def("reset", &Tracker::reset, "Drop all temporal state (camera, optical flow, lost counter).")
+        .def(
+            "set_camera",
+            [](Tracker &self, const py::array &K, const py::array &R, const py::array &t,
+               double k1, int frameWidth, int frameHeight, bool fixPosition) {
+                self.setCamera(array9FromArray(K, "K"), array9FromArray(R, "R"),
+                               array3FromArray(t, "t"), k1, frameWidth, frameHeight,
+                               fixPosition);
+            },
+            py::arg("K"), py::arg("R"), py::arg("t"), py::arg("k1") = 0.0,
+            py::arg("frame_width"), py::arg("frame_height"), py::arg("fix_position") = true,
+            "Start tracking from a known camera.\n\n"
+            "K: 3x3 intrinsics in the caller's frame resolution (row-major).\n"
+            "R: 3x3 world->camera rotation (the same R as P = K[R | -R t]).\n"
+            "t: camera centre in world metres (the same t as P = K[R | -R t]).\n"
+            "k1: first radial distortion coefficient (0 for none).\n"
+            "frame_width/frame_height: resolution that K was measured at.\n"
+            "fix_position: pin the camera centre, k1 and roll (a fixed PTZ\n"
+            "    camera); the per-frame solve then only adjusts pan/tilt/focal.\n"
+            "The camera model keeps its principal point at the image centre.");
 
     m.def("pitch_wireframe", &pitchWireframe, py::arg("delta") = 1.0,
+          py::arg("length") = SoccerPitch3D::DEFAULT_LENGTH,
+          py::arg("width") = SoccerPitch3D::DEFAULT_WIDTH,
           "Pitch markings as a list of (N, 3) float arrays in world metres.");
 }

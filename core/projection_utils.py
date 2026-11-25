@@ -139,6 +139,33 @@ def pixel_to_ground(u, v, K, R, t, k1=0.0, k2=0.0):
     return np.array([pt[0], pt[1]], dtype=np.float64)
 
 
+def homography_pixel_to_ground(u, v, H):
+    """Image pixel -> ground plane (z=0) using a world->image homography.
+
+    ``H`` is the ground-plane homography used by the LK tracker:
+    ``[x, y, 1] -> [u, v, 1]`` in metres to pixels.  This is the homography
+    counterpart of :func:`pixel_to_ground` and is preferred when the
+    calibration is tracked as an H (pitchcal) rather than a camera.
+
+    Args:
+        u, v: pixel coordinates
+        H: 3x3 world->image ground homography
+
+    Returns:
+        (2,) ground position [x, y] in metres, or None at the horizon.
+    """
+    try:
+        p = np.linalg.solve(np.asarray(H, dtype=np.float64),
+                            np.array([u, v, 1.0], dtype=np.float64))
+    except np.linalg.LinAlgError:
+        logger.trace("homography_pixel_to_ground: singular H at (%.1f, %.1f)", u, v)
+        return None
+    if abs(p[2]) < 1e-12 or not np.isfinite(p).all():
+        logger.trace("homography_pixel_to_ground: ray at (%.1f, %.1f) has no ground", u, v)
+        return None
+    return np.array([p[0] / p[2], p[1] / p[2]], dtype=np.float64)
+
+
 def project_3d_to_pixel(points_3d, K, R, t):
     """Project 3D world point(s) to image pixel coordinates.
 

@@ -37,6 +37,44 @@ std::array<double, 3> toArray(const Vector3x1 &v)
     return out;
 }
 
+bool isFiniteCamera(const Camera &camera)
+{
+    const double focal = camera.getFocalLength();
+    if (!std::isfinite(focal) || focal <= 0.0)
+    {
+        return false;
+    }
+    const Vector3x1 position = camera.getPosition();
+    for (int i = 0; i < 3; ++i)
+    {
+        if (!std::isfinite(position[i]))
+        {
+            return false;
+        }
+    }
+    const Matrix3x3 rotation = camera.getRotation();
+    for (int i = 0; i < 9; ++i)
+    {
+        if (!std::isfinite(rotation[i]))
+        {
+            return false;
+        }
+    }
+    const Point2D principal = camera.getPrincipalPoint();
+    if (!std::isfinite(principal.x()) || !std::isfinite(principal.y()))
+    {
+        return false;
+    }
+    for (double k : camera.getRadialDistortion())
+    {
+        if (!std::isfinite(k))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 Tracker::Tracker(const Config &cfg) : config(cfg)
@@ -49,8 +87,12 @@ Tracker::Tracker(const Config &cfg) : config(cfg)
     {
         throw std::invalid_argument("BroadTrack: position_mode must be \"free\" or \"soft\"");
     }
+    if (config.pitch_length <= 0.0 || config.pitch_width <= 0.0)
+    {
+        throw std::invalid_argument("BroadTrack: pitch_length/pitch_width must be positive");
+    }
 
-    _tracker = new CameraTracker();
+    _tracker = new CameraTracker(config.pitch_length, config.pitch_width);
     _priorCamera = new Camera(cv::Size(static_cast<int>(config.hd_width), static_cast<int>(config.hd_height)));
 }
 
@@ -63,9 +105,12 @@ Tracker::~Tracker()
 void Tracker::reset()
 {
     delete _tracker;
-    _tracker = new CameraTracker();
+    _tracker = new CameraTracker(config.pitch_length, config.pitch_width);
     _initialised = false;
     _framesLost = 0;
+    _hasLastGoodCamera = false;
+    _hasCameraAnchor = false;
+    _anchorFocal = 0.0;
     _previousFrame.release();
     _trackedPoints.clear();
     if (config.position_mode == "soft")
@@ -77,6 +122,78 @@ void Tracker::reset()
     {
         _tracker->setTripodInfo(Point3D(config.tripod_x, config.tripod_y, config.tripod_z), 0.0);
     }
+}
+
+void Tracker::setCamera(const std::array<double, 9> &K,
+                        const std::array<double, 9> &R,
+                        const std::array<double, 3> &t,
+                        double k1,
+                        int frameWidth,
+                        int frameHeight,
+                        bool fixPosition)
+{
+    if (frameWidth <= 0 || frameHeight <= 0)
+    {
+        throw std::invalid_argument("BroadTrack: frameWidth/frameHeight must be positive");
+    }
+    if (!std::isfinite(K[0]) || !std::isfinite(K[4]) || K[0] <= 0.0 || K[4] <= 0.0)
+    {
+        throw std::invalid_argument("BroadTrack: set_camera needs a positive focal length");
+    }
+    for (double value : R)
+    {
+        if (!std::isfinite(value))
+        {
+            throw std::invalid_argument("BroadTrack: set_camera got a non-finite rotation");
+        }
+    }
+    for (double value : t)
+    {
+        if (!std::isfinite(value))
+        {
+            throw std::invalid_argument("BroadTrack: set_camera got a non-finite camera centre");
+        }
+    }
+
+    // K arrives in the caller's frame pixels; the internal camera lives in HD.
+    // The focal is the square-pixel average; the principal point may be
+    // off-centre, which is what a manually marked ground homography can need
+    // (and what a cropped/virtual camera genuinely has).
+    const double toHd = config.hd_width / static_cast<double>(frameWidth);
+    const double focal = 0.5 * (K[0] + K[4]) * toHd;
+    const double cx = K[2] * toHd;
+    const double cy = K[5] * toHd;
+
+    Camera camera(cv::Size(static_cast<int>(config.hd_width), static_cast<int>(config.hd_height)));
+    camera.setFocalLength(focal);
+    camera.setPrincipalPointOffset(Point2D(cx, cy));
+    camera.setRotation(Matrix3x3(R.data()));
+    camera.setPosition(Vector3x1(t.data()));
+    camera.setRadialDistortion({k1});
+
+    _tracker->setCamera(camera);
+    if (fixPosition)
+    {
+        // A manually anchored camera is a fixed-position PTZ camera: pin the
+        // position so the per-frame solve cannot trade it against focal/k1.
+        const Vector3x1 panTiltRoll = camera.getPanTiltRoll();
+        _tracker->setCameraAnchor(Point3D(camera.getPosition()), k1, panTiltRoll[2]);
+        _hasCameraAnchor = true;
+        _anchorFocal = camera.getFocalLength();
+    }
+    else
+    {
+        _hasCameraAnchor = false;
+        _anchorFocal = 0.0;
+    }
+    // Any prior reset must return to the anchor, not to the broadcast prior.
+    *_priorCamera = camera;
+    _lastGoodCamera = camera;
+    _hasLastGoodCamera = true;
+    _initialised = true;
+    _framesLost = 0;
+    _previousFrame.release();
+    _trackedPoints.clear();
 }
 
 void Tracker::initPriorCamera()
@@ -164,7 +281,7 @@ Result Tracker::estimate(const cv::Mat &frame,
     }
 
     // --------------------------------------------------------- optical flow
-    SoccerPitch3D pitch;
+    SoccerPitch3D pitch(config.pitch_length, config.pitch_width);
     const Point2D topLeft = pitch.getPoint2D(SoccerPitch3D::TL_PITCH_CORNER);
     const Point2D bottomRight = pitch.getPoint2D(SoccerPitch3D::BR_PITCH_CORNER);
 
@@ -290,7 +407,11 @@ Result Tracker::estimate(const cv::Mat &frame,
             }
         }
 
-        if (_framesLost > config.lost_frames_before_reset && score < config.prior_reset_score)
+        // With a manual anchor the position is already pinned, and the camera
+        // may have panned/zoomed since the anchor. Resetting the whole camera
+        // to the anchor orientation would discard the only good estimate.
+        if (!_hasCameraAnchor && _framesLost > config.lost_frames_before_reset &&
+            score < config.prior_reset_score)
         {
             _tracker->setCamera(*_priorCamera);
         }
@@ -310,7 +431,28 @@ Result Tracker::estimate(const cv::Mat &frame,
     frame.copyTo(_previousFrame);
 
     // ---------------------------------------------------------------- result
-    const Camera solved = _tracker->getCamera();
+    Camera solved = _tracker->getCamera();
+    const double solvedFocal = solved.getFocalLength();
+    const bool focalSane =
+        !_hasCameraAnchor || _anchorFocal <= 0.0 ||
+        (solvedFocal >= 0.2 * _anchorFocal && solvedFocal <= 5.0 * _anchorFocal);
+    if (!isFiniteCamera(solved) || !std::isfinite(score) || !focalSane)
+    {
+        // A diverged Ceres solve can leave NaN (or an absurd focal) in the
+        // camera. Restore the last finite camera; one bad frame must not
+        // poison the whole sequence.
+        if (_hasLastGoodCamera)
+        {
+            _tracker->setCamera(_lastGoodCamera);
+            solved = _lastGoodCamera;
+        }
+        score = 0.0;
+    }
+    else if (score > 0.1)
+    {
+        _lastGoodCamera = solved;
+        _hasLastGoodCamera = true;
+    }
 
     Result result;
     result.ok = true;
